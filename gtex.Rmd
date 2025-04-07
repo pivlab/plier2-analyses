@@ -1,0 +1,142 @@
+
+
+### GTEx preprocessing
+
+Load libraries
+```{r}
+library(bigstatsr)
+library(data.table)
+library(dplyr)
+library(rsvd)
+library(glmnet)
+library(Matrix)
+library(knitr)
+```
+
+
+Load the local file s
+
+```{r}
+source("solvers.R")
+source("utilsNew.R")
+```
+
+
+
+Read in gtex RDS file 
+
+```{r}
+gtex=readRDS("bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds")
+```
+
+
+Aggregate in-place by 'description'
+```{r}
+gtex <- as.data.table(gtex)
+aggregated_gtex <- gtex[, lapply(.SD, sum), by = Description, .SDcols = is.numeric]
+```
+
+Create a meta data file to attach to the FBM matrix
+
+```{r}
+meta=list()
+meta$rowNames=aggregated_gtex$Description
+meta$colNames=colnames(aggregated_gtex)[-1]
+```
+
+Create the FBM
+```{r}
+fbm_file <- "FBM_gtex"  # Specify the file name for the gtexFBM
+#if already created
+#gtexFBM <- FBM(nrow = nrow(aggregated_gtex), ncol = ncol(aggregated_gtex) - 1, backingfile = fbm_file)
+gtexFBM <- FBM(nrow = nrow(aggregated_gtex), ncol = ncol(aggregated_gtex) - 1, backingfile = fbm_file)
+```
+
+```{r}
+tmp=cleanFBM(gtexFBM)
+```
+
+
+```{r}
+rowStats=computeRowStatsFBM(gtexFBM)
+plot(rowStats$row_means, rowStats$row_variances, log="y")
+```
+
+
+
+Filter the data which is not necessary in the case but will demonstrate.
+
+```{r}
+filterResult=filterFBM(gtexFBM, rowStats,mean_cutoff = 0, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
+gtexFBMfiltered=filterResult$fbm_filtered
+meta$rowNames=meta$rowNames[filterResult$kept_rows]
+```
+
+save the FBM object for quick loading
+
+```{r}
+gtexFBMfiltered$save()
+saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
+```
+do FBM svd
+
+```{r}
+set.seed(1);gtex.svd=big_randomSVD(gtexFBMfiltered, k = 500)
+#save
+saveRDS(gtex.svd, "gtexSVDr.RDS")
+```
+
+Load if starting from here
+
+```{r}
+if(T){
+gtexFBMsub=big_attach("hivar_gtex_matrix.gtexFBM.rds")
+meta=readRDS(paste0("hivar_gtex_matrix.gtexFBMmeta.RDS"))
+}
+```
+
+
+
+
+Run simpleDecompFBM as the base model 
+```{r}
+gtex.sdres=simpleDecompFBM(gtexFBMfiltered, k=500, svdres = gtex.svd)
+#save
+saveRDS(gtex.sdres, file="gtexSimpleDecompResult.RDS")
+```
+
+
+
+Download some pathways
+```{r}
+gmtList=list()
+
+
+gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
+gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
+gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
+gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
+gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
+
+```
+
+Create a pathMat object and save
+
+```{r}
+pathMat = gmtListToSparseMat(gmtList[c(3,5)])
+#saveRDS(gmtList, "gmtList.RDS")
+#saveRDS(pathMat, "pathMat.RDS")
+```
+
+Get a matched pathway set
+The FBM version doesn't do any subsetting, everything has to match exactly
+```{r}
+matchedPaths=getMatchedPathwayMat(pathMat, meta$rowNames)
+Chat=getChat(matchedPaths, method = "fast")
+```
+Run PLIER
+```{r}
+gtex.plier=PLIERfbm(gtexFBMfiltered, matchedPaths, gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, adaptive.frac = 0.05, max.U.updates = 10)
+```
+
+
