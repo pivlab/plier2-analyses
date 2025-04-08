@@ -37,23 +37,41 @@ aggregated_gtex <- gtex[, lapply(.SD, sum), by = Description, .SDcols = is.numer
 ```
 
 Create a meta data file to attach to the FBM matrix
-
+For testing we will use 2000 columns
 ```{r}
+set.seed(123);iisample=sample(1:ncol(gtexFBMfiltered),2000)
 meta=list()
 meta$rowNames=aggregated_gtex$Description
-meta$colNames=colnames(aggregated_gtex)[-1]
+meta$colNames=colnames(aggregated_gtex)[-1][iisample]
+data_mat <- as.matrix(aggregated_gtex[, -1])[, iisample] 
 ```
 
 Create the FBM
 ```{r}
-fbm_file <- "FBM_gtex"  # Specify the file name for the gtexFBM
+fbm_file <- "FBMgtex"  # Specify the file name for the gtexFBM
 #if already created
 #gtexFBM <- FBM(nrow = nrow(aggregated_gtex), ncol = ncol(aggregated_gtex) - 1, backingfile = fbm_file)
-gtexFBM <- FBM(nrow = nrow(aggregated_gtex), ncol = ncol(aggregated_gtex) - 1, backingfile = fbm_file)
+gtexFBM <- FBM(nrow = nrow(data_mat), ncol = ncol(data_mat), backingfile = fbm_file, create_bk = T)
 ```
 
+Populate it with data
 ```{r}
-tmp=cleanFBM(gtexFBM)
+# Populate in chunks (much faster for large matrices)
+block_size <- 100  # Adjust based on your system memory
+n_blocks <- ceiling(nrow(aggregated_gtex) / block_size)
+
+for (i in 1:n_blocks) {
+  start_row <- (i-1) * block_size + 1
+  end_row <- min(i * block_size, nrow(data_mat))
+  
+  gtexFBM[start_row:end_row, ] <- as.matrix(data_mat[start_row:end_row, ])
+}
+```
+
+
+
+```{r}
+cleanFBM(gtexFBM)
 ```
 
 
@@ -70,6 +88,17 @@ Filter the data which is not necessary in the case but will demonstrate.
 filterResult=filterFBM(gtexFBM, rowStats,mean_cutoff = 0, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
 gtexFBMfiltered=filterResult$fbm_filtered
 meta$rowNames=meta$rowNames[filterResult$kept_rows]
+rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
+rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
+```
+
+
+
+Do the z-scoring
+```{r}
+
+zscoreFBM(gtexFBMfiltered, rowStats = rowStats)
+meta$rowNames=meta$rowNames[filterResult$kept_rows]
 ```
 
 save the FBM object for quick loading
@@ -78,29 +107,19 @@ save the FBM object for quick loading
 gtexFBMfiltered$save()
 saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 ```
-do FBM svd
 
+
+Precompute the SVD
 ```{r}
-set.seed(1);gtex.svd=big_randomSVD(gtexFBMfiltered, k = 500)
-#save
-saveRDS(gtex.svd, "gtexSVDr.RDS")
-```
 
-Load if starting from here
-
-```{r}
-if(T){
-gtexFBMsub=big_attach("hivar_gtex_matrix.gtexFBM.rds")
-meta=readRDS(paste0("hivar_gtex_matrix.gtexFBMmeta.RDS"))
-}
+gtexFBM.svd=big_randomSVD(gtexFBMfiltered, k = 200)
 ```
 
 
-
-
-Run simpleDecompFBM as the base model 
+Run simpleDecomp as the base model 
 ```{r}
-gtex.sdres=simpleDecompFBM(gtexFBMfiltered, k=500, svdres = gtex.svd)
+
+gtex.sdres=simpleDecomp(gtexFBMfiltered, k=200, svdres = gtexFBM.svd)
 #save
 saveRDS(gtex.sdres, file="gtexSimpleDecompResult.RDS")
 ```
@@ -123,7 +142,7 @@ gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?
 Create a pathMat object and save
 
 ```{r}
-pathMat = gmtListToSparseMat(gmtList[c(3,5)])
+pathMat = gmtListToSparseMat(gmtList[c(5)])
 #saveRDS(gmtList, "gmtList.RDS")
 #saveRDS(pathMat, "pathMat.RDS")
 ```
@@ -134,9 +153,9 @@ The FBM version doesn't do any subsetting, everything has to match exactly
 matchedPaths=getMatchedPathwayMat(pathMat, meta$rowNames)
 Chat=getChat(matchedPaths, method = "fast")
 ```
-Run PLIER
+Run PLIER, setting `max.iter` low for demonstration
 ```{r}
-gtex.plier=PLIERfbm(gtexFBMfiltered, matchedPaths, gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, adaptive.frac = 0.05, max.U.updates = 10)
+gtex.plier=PLIERv2(gtexFBMfiltered, matchedPaths, gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 20)
 ```
 
 

@@ -1,15 +1,15 @@
+
+
 mat_mult <- function(mat1, mat2) {
-  if (is_fbm && inherits(mat1, "FBM")) {
+  is_fbm <- inherits(mat1, "FBM") 
+  if (is_fbm ) {
     # For FBM objects, use the specific multiplication method
-    return(big_prodMat(mat1, mat2))
+    return(big_prodMat(mat1, as.matrix(mat2)))
   } else {
     # Regular matrix multiplication
     return(mat1 %*% mat2)
   }
 }
-
-
-
 
 rotateSVD=function(svdres){
   upos=svdres$u
@@ -280,7 +280,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
                       rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0){
   
   
-  
+  #message("Checking type")
   # Detect matrix type
   is_fbm <- inherits(Y, "FBM")
   is_sparse <- inherits(Y, "dgCMatrix")
@@ -338,6 +338,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   if(is.null(L2)){
     L2=svdres$d[k]*scale
   }
+  L2k=L2*diag(k)
   #    L1=svdres$d[k]/2*scale
   print(paste0("L1 is set to ",L1))
   print(paste0("L2 is set to ",L2))
@@ -345,9 +346,11 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   if(is.null(B)){
     #initialize B with svd
     message("Init")
-    B=t(svdres$v[1:ncol(Y), 1:k]%*%diag(sqrt(svdres$d[1:k])))
+    B=t(svdres$v[, 1:k]%*%diag(sqrt(svdres$d[1:k])))
     #   B=t(svdres$v[1:ncol(Y), 1:k]%*%diag((svdres$d[1:k])))
     #   B=t(svdres$v[1:ncol(Y), 1:k])
+    show(dim(B))
+    message("Done")
   }
   else{
     message("B given")
@@ -370,7 +373,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
   
   pb <- txtProgressBar(min = 0, max = max.iter, style = 3)  # Set a high max value
-  
+ 
   for ( i in 1:max.iter){
     setTxtProgressBar(pb, i) # Avoid exceeding 100
     #main loop    
@@ -393,15 +396,21 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     oldB=B
     
     
-    B=solve(t(Z)%*%Z+L2*diag(k))%*%mat_mult(t(Z),Y)
-    
+    if(is_fbm){
+    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZY=t(ZYt)
+    B=solve(t(Z)%*%Z+L2k)%*%ZY
+    }
+    else{
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    }
     
     #update error
     Bdiff=sum((B-oldB)^2)/sum(B^2)
     BdiffTrace=c(BdiffTrace, Bdiff)
-    err0=sum((Y-Z%*%B)^2)+sum((Z)^2)*L1+sum(B^2)*L2
+ 
     if(trace){
-      message(paste0("iter",i, " errorY= ",erry<-round2(mean((Y-Z%*%B)^2)), ", Bdiff= ",round2(Bdiff), ", Bkappa=", round2(kappa(B))))
+      message(paste0("iter",i, ))
     }
     
     #check for convergence
@@ -450,23 +459,29 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   pathwaySelection=match.arg(pathwaySelection, c("complete", "fast"))
   
   
+  
+  
   message("**PLIER v2 **")
   
   
+  # Detect matrix type
+  is_fbm <- inherits(Y, "FBM")
+  is_sparse <- inherits(Y, "dgCMatrix")
   
-  if(nrow(priorMat)!=nrow(data) || !all(rownames(priorMat)==rownames(data))){
+  
+  if(nrow(priorMat)!=nrow(Y) || !all(rownames(priorMat)==rownames(data))){
     if(!allGenes){
-      cm=commonRows(data, priorMat)
+      cm=commonRows(Y, priorMat)
       message(paste("Selecting common genes:", length(cm)))
       priorMat=priorMat[cm,]
       Y=Y[cm,]
     }
     else{
-      extra.genes=setdiff(rownames(data), rownames(priorMat))
+      extra.genes=setdiff(rownames(Y), rownames(priorMat))
       eMat=matrix(0, nrow=length(extra.genes), ncol=ncol(priorMat))
       rownames(eMat)=extra.genes
       priorMat=rbind(priorMat, eMat)
-      priorMat=priorMat[rownames(data),]
+      priorMat=priorMat[rownames(Y),]
     }
     
   }
@@ -499,8 +514,8 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   }
   
   nc=ncol(priorMat)
-  ng=nrow(data)
-  ns=ncol(data)
+  ng=nrow(Y)
+  ns=ncol(Y)
   
   Bdiff=-1
   BdiffTrace=double()
@@ -554,17 +569,25 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   }
   
   Z=sdres$Z
-  if(ncol(sdres$B)==ncol(Y)){
-    B=sdres$B
-  }
-  B=solve(t(Z)%*%Z+L2*diag(k))%*%mat_mul(t(Z),Y)
-  
+
   if(is.null(L1)){
     L1=sdres$L1
   }
   if(is.null(L2)){
     L2=sdres$L2
   }
+  
+  if(ncol(sdres$B)==ncol(Y)){
+    B=sdres$B
+  }
+  
+  oldB=B
+
+  
+
+  
+  
+  
   if(!is.null(rseed)){
     message("using random start")
     set.seed(rseed)
@@ -595,6 +618,16 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   num.U.updates=0
   L1k=L1*diag(k)
   L2k=L2*diag(k)
+  
+  if(is_fbm){
+    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZY=t(ZYt)
+    B=solve(t(Z)%*%Z+L2k)%*%ZY
+  }
+  else{
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+  }
+  
   for ( iter in 1:max.iter){
     
     
@@ -653,8 +686,18 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     
     
     oldB=B
-    B=solve(t(Z)%*%Z+L2*diag(k))%*%mat_mul(t(Z),Y)
+
     
+    if(is_fbm){
+      ZYt=big_cprodMat(Y, as.matrix(Z))
+      ZY=t(ZYt)
+      B=solve(t(Z)%*%Z+L2k)%*%ZY
+    }
+    else{
+      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    }
+    
+
     
     
     
@@ -692,7 +735,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   rownames(U)=colnames(priorMat)
   colnames(U)=rownames(B)=paste0("LV", 1:k)
   
-  out=list(residual=(Y-Z%*%B), B=B, Z=Z, U=U, C=C, L1=L1, L2=L2, heldOutGenes=heldOutGenes)
+  out=list( B=B, Z=Z, U=U, C=C, L1=L1, L2=L2, heldOutGenes=heldOutGenes)
   
   if(doCrossval){
     message("crossValidation")
