@@ -39,7 +39,7 @@ aggregated_gtex <- gtex[, lapply(.SD, sum), by = Description, .SDcols = is.numer
 Create a meta data file to attach to the FBM matrix
 For testing we will use 2000 columns
 ```{r}
-set.seed(123);iisample=sample(1:ncol(gtexFBMfiltered),2000)
+set.seed(123);iisample=sample(2:ncol(aggregated_gtex),2000)
 meta=list()
 meta$rowNames=aggregated_gtex$Description
 meta$colNames=colnames(aggregated_gtex)[-1][iisample]
@@ -82,12 +82,13 @@ plot(rowStats$row_means, rowStats$row_variances, log="y")
 
 
 
-Filter the data which is not necessary in the case but will demonstrate.
+Filter the data. Doing aggressive filtering to reduce the number of genes.
 
 ```{r}
-filterResult=filterFBM(gtexFBM, rowStats,mean_cutoff = 0, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
+filterResult=filterFBM(gtexFBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
 gtexFBMfiltered=filterResult$fbm_filtered
 meta$rowNames=meta$rowNames[filterResult$kept_rows]
+rowStatsAll=rowStats
 rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
 rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 ```
@@ -155,7 +156,7 @@ Chat=getChat(matchedPaths, method = "fast")
 ```
 Run PLIER, setting `max.iter` low for demonstration
 ```{r}
-gtex.plier=PLIERv2(gtexFBMfiltered, matchedPaths, gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 20)
+gtex.plier=PLIERv2(gtexFBMfiltered, matchedPaths, sdres = gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 20)
 ```
 
 
