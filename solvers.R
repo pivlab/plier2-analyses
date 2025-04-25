@@ -152,7 +152,7 @@ getAUCstats=function(summary){
 
 getMatchedPathwayMat=function(pathMat, new.genes, min.genes=10){
   cm=intersect(rownames(pathMat), new.genes)
-  mymessage("there are ", length(cm), " genes in the intersction between data and prior")
+  message("there are ", length(cm), " genes in the intersction between data and prior")
   matchPathMat=Matrix(0, nrow=length(new.genes), ncol=ncol(pathMat), sparse=T)
   rownames(matchPathMat)=new.genes
   colnames(matchPathMat)=colnames(pathMat)
