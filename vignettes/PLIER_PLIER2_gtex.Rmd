@@ -37,7 +37,7 @@ source(here("R/utilsNew.R"))
 
 Read in gtex RDS file 
 ```{r}
-gtex=readRDS(here("data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"))
+gtex=readRDS(here("bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"))
 ```
 
 Aggregate in-place by 'description'
@@ -99,7 +99,6 @@ rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 Do the z-scoring
 ```{r}
 zscoreFBM(gtexFBMfiltered, rowStats = rowStats)
-meta$rowNames=meta$rowNames[filterResult$kept_rows]
 ```
 
 save the FBM object for quick loading
