@@ -1,0 +1,167 @@
+```{r}
+library(here)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(tibble)
+```
+
+# Compare both models
+
+## Load Data
+
+```{r}
+gtex_plier <- readRDS(here('output/vignettes/plier2_testing/gtex_PLIER.rds'))
+gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex_PLIER2.rds'))
+```
+
+## L
+
+```{r}
+message('L PLIER')
+gtex_plier$L2
+gtex_plier$L3
+
+message('L PLIER2')
+gtex_plier2$L2
+gtex_plier2$L3
+```
+
+## Summary
+
+```{r}
+message('Summary PLIER')
+gtex_plier_summary  <- data.frame(gtex_plier$summary)
+colnames(gtex_plier_summary) <- c('pathway', 'LV', 'AUC', 'pvalue', 'FDR')
+
+n_fdr   <- sum(gtex_plier_summary$FDR < 0.05, na.rm = TRUE)
+n_auc   <- sum(gtex_plier_summary$AUC > 0.7, na.rm = TRUE)
+n_both  <- sum(gtex_plier_summary$FDR < 0.05 & gtex_plier_summary$AUC > 0.7, na.rm = TRUE)
+
+data.frame(
+  criterion = c("FDR < 0.05", "AUC > 0.7", "both"),
+  count = c(n_fdr, n_auc, n_both)
+)
+
+message('Summary PLIER2')
+gtex_plier2_summary <- data.frame(gtex_plier2$summary)
+colnames(gtex_plier2_summary) <- c('pathway', 'LV', 'AUC', 'pvalue', 'FDR')
+
+n_fdr2   <- sum(gtex_plier2_summary$FDR < 0.05, na.rm = TRUE)
+n_auc2   <- sum(gtex_plier2_summary$AUC > 0.7, na.rm = TRUE)
+n_both2  <- sum(gtex_plier2_summary$FDR < 0.05 & gtex_plier2_summary$AUC > 0.7, na.rm = TRUE)
+
+data.frame(
+  criterion = c("FDR < 0.05", "AUC > 0.7", "both"),
+  count = c(n_fdr2, n_auc2, n_both2)
+)
+```
+
+## Shared LVs
+
+```{r}
+message('Shared LVs between PLIER and PLIER2')
+
+shared_lvs <- gtex_plier_summary[c('pathway', 'LV')] %>% 
+  inner_join(gtex_plier2_summary[c('pathway', 'LV')])
+
+head(shared_lvs)
+
+message('Number of shared pathways-LVs: ', nrow(shared_lvs))
+message('Number of LVs in pathways-PLIER: ', nrow(gtex_plier_summary))
+message('Number of LVs in pathways-PLIER2: ', nrow(gtex_plier2_summary))
+```
+
+## Z Matrices
+
+```{r}
+gtex_plier_Z <- data.frame(gtex_plier$Z)
+colnames(gtex_plier_Z) <- paste0('LV', 1:ncol(gtex_plier_Z))
+
+gtex_plier2_Z <- as.data.frame(as.matrix(gtex_plier2$Z))
+colnames(gtex_plier2_Z) <- paste0('LV', 1:ncol(gtex_plier_Z))
+
+head(gtex_plier_Z)
+head(gtex_plier2_Z)
+```
+
+## Pearson Correlation
+
+```{r}
+m1 <- as.matrix(gtex_plier_Z)
+m2 <- as.matrix(gtex_plier2_Z)
+
+lv_names <- intersect(colnames(m1), colnames(m2))
+
+cor_lv_pearson <- sapply(lv_names, function(lv) cor(m1[, lv], m2[, lv], method = "pearson"))
+cor_df_pearson <- data.frame(LV = lv_names, Pearson_correlation = cor_lv_pearson)
+
+cor_df_pearson <- cor_df_pearson[order(cor_df_pearson$Pearson_correlation), ]
+cor_df_pearson$LV <- factor(cor_df_pearson$LV, levels = cor_df_pearson$LV)
+
+ggplot(cor_df_pearson, aes(x = LV, y = Pearson_correlation)) +
+  geom_segment(aes(xend = LV, y = 0, yend = Pearson_correlation), color = "grey70") +
+  geom_point(aes(color = Pearson_correlation)) +
+  scale_color_gradient2(midpoint = 0, low = "blue", mid = "white", high = "red") +
+  coord_flip() +
+  labs(title = "PLIER vs PLIER2 Pearson", x = "LV", y = "Pearson Correlation", color = "Correlation") +
+  theme_minimal()
+
+options(repr.plot.width=20, repr.plot.height=20)
+cors_pearson <- cor(m1, m2, method = "pearson")
+pheatmap(cors_pearson, cluster_rows = FALSE, cluster_cols = FALSE, main = "PLIER1 vs PLIER2 Pearson", fontsize_row = 6, fontsize_col = 6)
+```
+
+## Spearman Correlation
+
+```{r}
+cor_lv_spearman <- sapply(lv_names, function(lv) cor(m1[, lv], m2[, lv], method = "spearman"))
+cor_df_spearman <- data.frame(LV = lv_names, Spearman_correlation = cor_lv_spearman)
+
+cor_df_spearman <- cor_df_spearman[order(cor_df_spearman$Spearman_correlation), ]
+cor_df_spearman$LV <- factor(cor_df_spearman$LV, levels = cor_df_spearman$LV)
+
+ggplot(cor_df_spearman, aes(x = LV, y = Spearman_correlation)) +
+  geom_segment(aes(xend = LV, y = 0, yend = Spearman_correlation), color = "grey70") +
+  geom_point(aes(color = Spearman_correlation)) +
+  scale_color_gradient2(midpoint = 0, low = "blue", mid = "white", high = "red") +
+  coord_flip() +
+  labs(title = "PLIER vs PLIER2 Spearman", x = "LV", y = "Spearman Correlation", color = "Correlation") +
+  theme_minimal()
+
+cors_spearman <- cor(m1, m2, method = "spearman")
+pheatmap(cors_spearman, cluster_rows = FALSE, cluster_cols = FALSE, main = "PLIER1 vs PLIER2 Spearman", fontsize_row = 6, fontsize_col = 6)
+```
+
+## Jaccard Index
+
+```{r}
+top_n <- ceiling(0.01 * nrow(gtex_plier_Z))
+
+jaccard_index <- function(x, y) length(intersect(x, y)) / length(union(x, y))
+
+cor_df_jaccard <- map_dfr(lv_names, function(lv) {
+  top1 <- gtex_plier_Z %>%
+    rownames_to_column("gene") %>%
+    arrange(desc(.data[[lv]])) %>%
+    slice_head(n = top_n) %>%
+    pull(gene)
+  top2 <- gtex_plier2_Z %>%
+    rownames_to_column("gene") %>%
+    arrange(desc(.data[[lv]])) %>%
+    slice_head(n = top_n) %>%
+    pull(gene)
+  tibble(LV = lv, Jaccard = jaccard_index(top1, top2))
+})
+
+cor_df_jaccard <- cor_df_jaccard[order(cor_df_jaccard$Jaccard), ]
+cor_df_jaccard$LV <- factor(cor_df_jaccard$LV, levels = cor_df_jaccard$LV)
+
+ggplot(cor_df_jaccard, aes(x = LV, y = Jaccard)) +
+  geom_segment(aes(xend = LV, y = 0, yend = Jaccard), color = "grey70") +
+  geom_point(aes(color = Jaccard)) +
+  scale_color_gradient2(midpoint = median(cor_df_jaccard$Jaccard), low = "blue", mid = "white", high = "red") +
+  coord_flip() +
+  labs(title = "PLIER vs PLIER2 Jaccard", x = "LV", y = "Jaccard Index", color = "Jaccard") +
+  theme_minimal()
+```

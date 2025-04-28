@@ -1,9 +1,9 @@
-
-
 # GTEx preprocessing
 
 Load libraries
 ```{r}
+options(download.file.method="wget")
+
 if (!requireNamespace("PLIER", quietly = TRUE)) {
   if (!requireNamespace("devtools", quietly = TRUE)) {
     install.packages("devtools")
@@ -170,9 +170,9 @@ library(PLIER)
 ```
 
 ```{r}
-gtex.plier=PLIER::PLIER(gtexFBMfiltered[], as.matrix(matchedPaths), svdres = gtexFBM.svd, Chat = as.matrix(Chat) , doCrossval = T, max.iter = 20)
+gtex.plier=PLIER::PLIER(gtexFBMfiltered[], as.matrix(matchedPaths), svdres = gtexFBM.svd, Chat = as.matrix(Chat) , doCrossval = T, max.iter = 20, k=200)
 ```
 
 ```{r}
-saveRDS(gtex.plier, file = file.path(output_nb_path, "gtex_PLIER2.rds"))
+saveRDS(gtex.plier, file = file.path(output_nb_path, "gtex_PLIER.rds"))
 ```
