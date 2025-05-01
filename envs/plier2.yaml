@@ -1,4 +1,4 @@
-name: clamp
+name: plier2
 channels:
   - conda-forge
   - bioconda
@@ -25,3 +25,4 @@ dependencies:
   - r-curl
   - r-plyr
   - bioconductor-qvalue
+  - r-hdf5r

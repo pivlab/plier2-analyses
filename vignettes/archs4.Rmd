@@ -1,0 +1,213 @@
+# ARCHS4 preprocessing
+
+Load libraries
+```{r}
+library(bigstatsr)
+library(data.table)
+library(dplyr)
+library(rsvd)
+library(glmnet)
+library(Matrix)
+library(knitr)
+library(here)
+library(rhdf5)
+library(hdf5r)
+```
+
+Output 
+
+```{r}
+output_nb_path <- here("output/vignettes/plier2_testing/archs4")
+dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
+```
+
+Load the local files
+
+```{r}
+source(here("R/solvers.R"))
+source(here("R/utilsNew.R"))
+```
+
+Download ARCHS4 
+
+```{r download_archs4_if_needed, eval = TRUE, echo = TRUE, message = TRUE}
+url <- "https://s3.dev.maayanlab.cloud/archs4/files/human_gene_v2.5.h5"
+output_dir <- here::here("data", "archs4")
+output_file <- file.path(output_dir, "human_gene_v2.5.h5")
+
+if (!file.exists(output_file)) {
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+  command <- sprintf("wget -c '%s' -O '%s'", url, output_file)
+  tryCatch({
+    system(command)
+    cat("File downloaded successfully to:", output_file, "\n")
+  }, error = function(e) {
+    cat("Error during download:", e$message, "\n")
+  })
+} else {
+  cat("File already exists. Skipping download.\n")
+}
+```
+
+Process ARCHS4
+
+```{r process-gtex, message=FALSE, warning=FALSE}
+exprs_path  <- "data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
+output_file <- "data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"
+
+if (!file.exists(output_file)) {
+  dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+  
+  exprs_data <- read.table(exprs_path, header = TRUE, sep = "\t", skip = 2, check.names = FALSE) %>%
+    dplyr::rename(
+      gene_ens_id = Name,
+      gene_symbol = Description
+    )
+  
+  saveRDS(exprs_data, output_file)
+  message("File successfully written to: ", output_file)
+} else {
+  message("Output file already exists. Skipping.")
+}
+```
+
+Read in ARCHS4 file 
+```{r}
+file_path <- here("data/archs4/human_gene_v2.5.h5")
+h5        <- H5File$new(file_path, mode = "r")
+dset      <- h5[["/data/expression"]]
+gene_symbols <- h5[["/meta/genes/symbol"]]$read()
+sample_names <- h5[["/meta/samples/geo_accession"]]$read()
+```
+
+Create a meta data file to attach to the FBM matrix
+
+```{r}
+n_genes      <- length(gene_symbols)
+n_samples    <- length(sample_names)
+
+fbm_file  <- file.path(output_nb_path, "FBMarchs4")
+archs4FBM <- FBM(
+  nrow        = n_genes,
+  ncol        = n_samples,
+  backingfile = fbm_file,
+  create_bk   = TRUE
+)
+```
+
+Populate it with data
+```{r}
+block_size <- 100
+n_blocks   <- ceiling(n_samples / block_size)
+
+for (i in seq_len(n_blocks)) {
+  samp_idx <- ((i-1)*block_size + 1):min(i*block_size, n_samples)
+  
+  # [samples_idx × genes] 
+  raw_block <- dset[samp_idx, ]
+  
+  # transpose → [genes × samples_idx]
+  mat <- t(raw_block)
+  
+  # optional sanity check
+  if (!all(dim(mat) == c(n_genes, length(samp_idx)))) {
+    stop(sprintf(
+      "Block %d: got %d×%d but expected %d×%d",
+      i, dim(mat)[1], dim(mat)[2], n_genes, length(samp_idx)
+    ))
+  }
+  
+  # write those columns into the FBM
+  archs4FBM[, samp_idx] <- mat
+}
+
+h5$close_all()
+```
+
+```{r}
+cleanFBM(archs4FBM)
+```
+
+```{r}
+rowStats=computeRowStatsFBM(archs4FBM)
+plot(rowStats$row_means, rowStats$row_variances, log="y")
+```
+Filter the data. Doing aggressive filtering to reduce the number of genes.
+```{r}
+filterResult=filterFBM(archs4FBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
+archs4FBMfiltered=filterResult$fbm_filtered
+meta$rowNames=meta$rowNames[filterResult$kept_rows]
+rowStatsAll=rowStats
+rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
+rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
+```
+
+Do the z-scoring
+```{r}
+zscoreFBM(archs4FBMfiltered, rowStats = rowStats)
+```
+
+save the FBM object for quick loading
+```{r}
+archs4FBMfiltered$save()
+saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
+```
+
+Precompute the SVD
+```{r}
+# number of samples 888821
+# root of 888821 = 942, using as a k
+
+k = 942
+archs4FBM.svd=big_randomSVD(archs4FBMfiltered, k = k)
+```
+
+Run simpleDecomp as the base model 
+```{r}
+decomp_file <- file.path(output_nb_path, "archs4SimpleDecompResult.RDS")
+
+if (!file.exists(decomp_file)) {
+  archs4.sdres <- simpleDecomp(archs4FBMfiltered, k = k, svdres = archs4FBM.svd)
+  saveRDS(archs4.sdres, file = decomp_file)
+} else {
+  archs4.sdres <- readRDS(decomp_file)
+}
+```
+
+Download some pathways
+```{r}
+gmtList=list()
+
+gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
+gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
+gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
+gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
+gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
+```
+
+Create a pathMat object and save
+```{r}
+pathMat = gmtListToSparseMat(gmtList[c(5)])
+#saveRDS(gmtList, "gmtList.RDS")
+#saveRDS(pathMat, "pathMat.RDS")
+```
+
+Get a matched pathway set
+The FBM version doesn't do any subsetting, everything has to match exactly
+```{r}
+matchedPaths=getMatchedPathwayMat(pathMat, meta$rowNames)
+Chat=getChat(matchedPaths, method = "fast")
+```
+
+# Run PLIER2
+
+Run PLIER2, setting `max.iter` low for demonstration
+```{r}
+archs4.plier2=PLIERv2(archs4FBMfiltered, matchedPaths, sdres = archs4.sdres, Chat = Chat, doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 350)
+```
+
+```{r}
+saveRDS(archs4.plier2, file = file.path(output_nb_path, "archs4_PLIER2.rds"))
+```

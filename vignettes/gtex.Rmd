@@ -1,9 +1,17 @@
-
-
-### GTEx preprocessing
+# GTEx preprocessing
 
 Load libraries
 ```{r}
+options(download.file.method="wget")
+
+if (!requireNamespace("PLIER", quietly = TRUE)) {
+  if (!requireNamespace("devtools", quietly = TRUE)) {
+    install.packages("devtools")
+  }
+  library(devtools)
+  install_github("wgmao/PLIER")
+}
+
 library(bigstatsr)
 library(data.table)
 library(dplyr)
@@ -11,24 +19,65 @@ library(rsvd)
 library(glmnet)
 library(Matrix)
 library(knitr)
+library(here)
+library(PLIER)
 ```
 
-
-Load the local file s
+Output 
 
 ```{r}
-source("solvers.R")
-source("utilsNew.R")
+output_nb_path <- here("output/vignettes/plier2_testing/gtex")
+dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
 ```
 
+Load the local files
+```{r}
+source(here("R/solvers.R"))
+source(here("R/utilsNew.R"))
+```
 
+Download GTEx 
+
+```{r download-gtex, message=FALSE, warning=FALSE}
+url      <- "https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
+dest_dir <- "data"
+dest_gz  <- file.path(dest_dir, basename(url))
+
+if (!file.exists(dest_gz)) {
+  dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
+  download.file(url, dest_gz, mode = "wb")
+  message("Downloaded to: ", dest_gz)
+} else {
+  message("File already exists, skipping download.")
+}
+```
+
+Process GTEx
+
+```{r process-gtex, message=FALSE, warning=FALSE}
+exprs_path  <- "data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
+output_file <- "data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"
+
+if (!file.exists(output_file)) {
+  dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+  
+  exprs_data <- read.table(exprs_path, header = TRUE, sep = "\t", skip = 2, check.names = FALSE) %>%
+    dplyr::rename(
+      gene_ens_id = Name,
+      gene_symbol = Description
+    )
+  
+  saveRDS(exprs_data, output_file)
+  message("File successfully written to: ", output_file)
+} else {
+  message("Output file already exists. Skipping.")
+}
+```
 
 Read in gtex RDS file 
-
 ```{r}
-gtex=readRDS("bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds")
+gtex=readRDS(here("data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"))
 ```
-
 
 Aggregate in-place by 'description'
 ```{r}
@@ -37,18 +86,24 @@ aggregated_gtex <- gtex[, lapply(.SD, sum), by = Description, .SDcols = is.numer
 ```
 
 Create a meta data file to attach to the FBM matrix
-For testing we will use 2000 columns
+
 ```{r}
-set.seed(123);iisample=sample(2:ncol(aggregated_gtex),2000)
-meta=list()
-meta$rowNames=aggregated_gtex$Description
-meta$colNames=colnames(aggregated_gtex)[-1][iisample]
-data_mat <- as.matrix(aggregated_gtex[, -1])[, iisample] 
+# For testing we will use 2000 columns
+# set.seed(123);iisample=sample(2:ncol(aggregated_gtex),2000)
+# meta=list()
+# meta$rowNames=aggregated_gtex$Description
+# meta$colNames=colnames(aggregated_gtex)[-1][iisample]
+# data_mat <- as.matrix(aggregated_gtex[, -1])[, iisample] 
+
+meta <- list()
+meta$rowNames <- aggregated_gtex$Description
+meta$colNames <- colnames(aggregated_gtex)[-1]
+data_mat <- as.matrix(aggregated_gtex[, -1])
 ```
 
 Create the FBM
 ```{r}
-fbm_file <- "FBMgtex"  # Specify the file name for the gtexFBM
+fbm_file <- file.path(output_nb_path, "FBMgtex")
 #if already created
 #gtexFBM <- FBM(nrow = nrow(aggregated_gtex), ncol = ncol(aggregated_gtex) - 1, backingfile = fbm_file)
 gtexFBM <- FBM(nrow = nrow(data_mat), ncol = ncol(data_mat), backingfile = fbm_file, create_bk = T)
@@ -68,22 +123,15 @@ for (i in 1:n_blocks) {
 }
 ```
 
-
-
 ```{r}
 cleanFBM(gtexFBM)
 ```
-
 
 ```{r}
 rowStats=computeRowStatsFBM(gtexFBM)
 plot(rowStats$row_means, rowStats$row_variances, log="y")
 ```
-
-
-
 Filter the data. Doing aggressive filtering to reduce the number of genes.
-
 ```{r}
 filterResult=filterFBM(gtexFBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
 gtexFBMfiltered=filterResult$fbm_filtered
@@ -93,55 +141,46 @@ rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
 rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 ```
 
-
-
 Do the z-scoring
 ```{r}
-
 zscoreFBM(gtexFBMfiltered, rowStats = rowStats)
-meta$rowNames=meta$rowNames[filterResult$kept_rows]
 ```
 
 save the FBM object for quick loading
-
 ```{r}
 gtexFBMfiltered$save()
 saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 ```
 
-
 Precompute the SVD
 ```{r}
-
 gtexFBM.svd=big_randomSVD(gtexFBMfiltered, k = 200)
 ```
 
-
 Run simpleDecomp as the base model 
 ```{r}
+decomp_file <- file.path(output_nb_path, "gtexSimpleDecompResult.RDS")
 
-gtex.sdres=simpleDecomp(gtexFBMfiltered, k=200, svdres = gtexFBM.svd)
-#save
-saveRDS(gtex.sdres, file="gtexSimpleDecompResult.RDS")
+if (!file.exists(decomp_file)) {
+  gtex.sdres <- simpleDecomp(gtexFBMfiltered, k = 200, svdres = gtexFBM.svd)
+  saveRDS(gtex.sdres, file = decomp_file)
+} else {
+  gtex.sdres <- readRDS(decomp_file)
+}
 ```
-
-
 
 Download some pathways
 ```{r}
 gmtList=list()
-
 
 gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
 gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
 gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
 gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
 gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
-
 ```
 
 Create a pathMat object and save
-
 ```{r}
 pathMat = gmtListToSparseMat(gmtList[c(5)])
 #saveRDS(gmtList, "gmtList.RDS")
@@ -154,9 +193,55 @@ The FBM version doesn't do any subsetting, everything has to match exactly
 matchedPaths=getMatchedPathwayMat(pathMat, meta$rowNames)
 Chat=getChat(matchedPaths, method = "fast")
 ```
-Run PLIER, setting `max.iter` low for demonstration
+
+# Run PLIER2
+
+Run PLIER2, setting `max.iter` low for demonstration
 ```{r}
-gtex.plier=PLIERv2(gtexFBMfiltered, matchedPaths, sdres = gtex.sdres, Chat = Chat,doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 20)
+time_taken2 <- system.time({
+  gtex.plier2 = PLIERv2(
+    gtexFBMfiltered,
+    matchedPaths,
+    sdres = gtex.sdres,
+    Chat = Chat,
+    doCrossval = TRUE,
+    multiplier = 3,
+    max.U.updates = 3,
+    max.iter = 350
+  )
+})
+
+print(time_taken2)
 ```
 
+```{r}
+saveRDS(gtex.plier2, file = file.path(output_nb_path, "gtex_PLIER2.rds"))
+```
 
+# Run PLIER
+
+Run PLIER with the same inputs than PLIER2
+
+```{r}
+library(PLIER)
+```
+
+```{r}
+time_taken <- system.time({
+  gtex.plier = PLIER::PLIER(
+    gtexFBMfiltered[], 
+    as.matrix(matchedPaths), 
+    svdres = gtexFBM.svd, 
+    Chat = as.matrix(Chat), 
+    doCrossval = TRUE, 
+    max.iter = 350, 
+    k = 200
+  )
+})
+
+print(time_taken)
+```
+
+```{r}
+saveRDS(gtex.plier, file = file.path(output_nb_path, "gtex_PLIER.rds"))
+```

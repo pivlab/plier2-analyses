@@ -4,6 +4,7 @@ library(dplyr)
 library(ggplot2)
 library(purrr)
 library(tibble)
+library(pheatmap)
 ```
 
 # Compare both models
@@ -11,18 +12,20 @@ library(tibble)
 ## Load Data
 
 ```{r}
-gtex_plier <- readRDS(here('output/vignettes/plier2_testing/gtex_PLIER.rds'))
-gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex_PLIER2.rds'))
+gtex_plier <- readRDS(here('output/vignettes/plier2_testing/gtex/gtex_PLIER.rds'))
+gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex/gtex_PLIER2.rds'))
 ```
 
 ## L
 
 ```{r}
 message('L PLIER')
+gtex_plier$L1
 gtex_plier$L2
 gtex_plier$L3
 
 message('L PLIER2')
+gtex_plier2$L1
 gtex_plier2$L2
 gtex_plier2$L3
 ```
@@ -30,46 +33,51 @@ gtex_plier2$L3
 ## Summary
 
 ```{r}
-message('Summary PLIER')
 gtex_plier_summary  <- data.frame(gtex_plier$summary)
 colnames(gtex_plier_summary) <- c('pathway', 'LV', 'AUC', 'pvalue', 'FDR')
 
-n_fdr   <- sum(gtex_plier_summary$FDR < 0.05, na.rm = TRUE)
-n_auc   <- sum(gtex_plier_summary$AUC > 0.7, na.rm = TRUE)
-n_both  <- sum(gtex_plier_summary$FDR < 0.05 & gtex_plier_summary$AUC > 0.7, na.rm = TRUE)
-
-data.frame(
-  criterion = c("FDR < 0.05", "AUC > 0.7", "both"),
-  count = c(n_fdr, n_auc, n_both)
-)
-
-message('Summary PLIER2')
 gtex_plier2_summary <- data.frame(gtex_plier2$summary)
 colnames(gtex_plier2_summary) <- c('pathway', 'LV', 'AUC', 'pvalue', 'FDR')
 
-n_fdr2   <- sum(gtex_plier2_summary$FDR < 0.05, na.rm = TRUE)
-n_auc2   <- sum(gtex_plier2_summary$AUC > 0.7, na.rm = TRUE)
-n_both2  <- sum(gtex_plier2_summary$FDR < 0.05 & gtex_plier2_summary$AUC > 0.7, na.rm = TRUE)
+gtex_plier_summary_sub <- gtex_plier_summary %>% 
+  dplyr::filter(AUC > 0.7) %>% 
+  dplyr::filter(FDR < 0.05) %>% 
+  dplyr::select(pathway, LV)
 
-data.frame(
-  criterion = c("FDR < 0.05", "AUC > 0.7", "both"),
-  count = c(n_fdr2, n_auc2, n_both2)
-)
+message(paste('Total pathways/LVs PLIER', nrow(gtex_plier_summary_sub)))
+
+gtex_plier2_summary_sub <- gtex_plier2_summary %>% 
+  dplyr::filter(AUC > 0.7) %>% 
+  dplyr::filter(FDR < 0.05) %>% 
+  dplyr::select(pathway, LV)
+
+message(paste('Total pathways/LVs PLIER2', nrow(gtex_plier2_summary_sub)))
+
+shared_pliers <- gtex_plier_summary_sub %>% 
+  inner_join(gtex_plier2_summary_sub)
+
+message(paste('Total shared pathways/LVs PLIER-PLIER2', nrow(shared_pliers)))
+
+head(shared_pliers)
+```
+```{r}
+gtex_plier_summary_sub <- gtex_plier_summary_sub %>% 
+  dplyr::group_by(LV) %>% 
+  summarise(pathway_plier = paste0(pathway, collapse = ' '), .groups = 'drop') %>% 
+  dplyr::select(LV, pathway_plier)
+
+gtex_plier2_summary_sub <- gtex_plier2_summary_sub %>% 
+  dplyr::group_by(LV) %>% 
+  summarise(pathway_plier2 = paste0(pathway, collapse = ' '), .groups = 'drop') %>% 
+  dplyr::select(LV, pathway_plier2)
+
+shared_sel_lvs <- inner_join(gtex_plier_summary_sub, gtex_plier2_summary_sub)
 ```
 
 ## Shared LVs
 
 ```{r}
-message('Shared LVs between PLIER and PLIER2')
-
-shared_lvs <- gtex_plier_summary[c('pathway', 'LV')] %>% 
-  inner_join(gtex_plier2_summary[c('pathway', 'LV')])
-
-head(shared_lvs)
-
-message('Number of shared pathways-LVs: ', nrow(shared_lvs))
-message('Number of LVs in pathways-PLIER: ', nrow(gtex_plier_summary))
-message('Number of LVs in pathways-PLIER2: ', nrow(gtex_plier2_summary))
+head(gtex_plier_summary)
 ```
 
 ## Z Matrices
@@ -107,7 +115,6 @@ ggplot(cor_df_pearson, aes(x = LV, y = Pearson_correlation)) +
   labs(title = "PLIER vs PLIER2 Pearson", x = "LV", y = "Pearson Correlation", color = "Correlation") +
   theme_minimal()
 
-options(repr.plot.width=20, repr.plot.height=20)
 cors_pearson <- cor(m1, m2, method = "pearson")
 pheatmap(cors_pearson, cluster_rows = FALSE, cluster_cols = FALSE, main = "PLIER1 vs PLIER2 Pearson", fontsize_row = 6, fontsize_col = 6)
 ```
