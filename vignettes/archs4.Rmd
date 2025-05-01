@@ -51,28 +51,6 @@ if (!file.exists(output_file)) {
 }
 ```
 
-Process ARCHS4
-
-```{r process-gtex, message=FALSE, warning=FALSE}
-exprs_path  <- "data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
-output_file <- "data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"
-
-if (!file.exists(output_file)) {
-  dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
-  
-  exprs_data <- read.table(exprs_path, header = TRUE, sep = "\t", skip = 2, check.names = FALSE) %>%
-    dplyr::rename(
-      gene_ens_id = Name,
-      gene_symbol = Description
-    )
-  
-  saveRDS(exprs_data, output_file)
-  message("File successfully written to: ", output_file)
-} else {
-  message("Output file already exists. Skipping.")
-}
-```
-
 Read in ARCHS4 file 
 ```{r}
 file_path <- here("data/archs4/human_gene_v2.5.h5")
@@ -80,47 +58,76 @@ h5        <- H5File$new(file_path, mode = "r")
 dset      <- h5[["/data/expression"]]
 gene_symbols <- h5[["/meta/genes/symbol"]]$read()
 sample_names <- h5[["/meta/samples/geo_accession"]]$read()
-```
-
-Create a meta data file to attach to the FBM matrix
-
-```{r}
 n_genes      <- length(gene_symbols)
 n_samples    <- length(sample_names)
+```
 
-fbm_file  <- file.path(output_nb_path, "FBMarchs4")
-archs4FBM <- FBM(
+Pick 10% of samples at random
+
+```{r}
+set.seed(42)
+keep_cols <- sort(sample.int(n_samples, size = floor(0.1 * n_samples)))
+n_keep    <- length(keep_cols)
+```
+
+Create FBM matrix
+
+```{r}
+# fbm_file  <- file.path(output_nb_path, "FBMarchs4")
+# archs4FBM <- FBM(
+#   nrow        = n_genes,
+#   ncol        = n_samples,
+#   backingfile = fbm_file,
+#   create_bk   = TRUE
+# )
+
+fbm_file_sub   <- file.path(output_nb_path, "FBMarchs4_10pct")
+archs4FBM_sub  <- FBM(
   nrow        = n_genes,
-  ncol        = n_samples,
-  backingfile = fbm_file,
+  ncol        = n_keep,
+  backingfile = fbm_file_sub,
   create_bk   = TRUE
 )
 ```
 
 Populate it with data
 ```{r}
-block_size <- 100
-n_blocks   <- ceiling(n_samples / block_size)
+# block_size <- 100
+# n_blocks   <- ceiling(n_samples / block_size)
+# 
+# for (i in seq_len(n_blocks)) {
+#   samp_idx <- ((i-1)*block_size + 1):min(i*block_size, n_samples)
+#   
+#   # [samples_idx × genes] 
+#   raw_block <- dset[samp_idx, ]
+#   
+#   # transpose → [genes × samples_idx]
+#   mat <- t(raw_block)
+#   
+#   # optional sanity check
+#   if (!all(dim(mat) == c(n_genes, length(samp_idx)))) {
+#     stop(sprintf(
+#       "Block %d: got %d×%d but expected %d×%d",
+#       i, dim(mat)[1], dim(mat)[2], n_genes, length(samp_idx)
+#     ))
+#   }
+#   
+#   # write those columns into the FBM
+#   archs4FBM[, samp_idx] <- mat
+# }
+# 
+# h5$close_all()
 
-for (i in seq_len(n_blocks)) {
-  samp_idx <- ((i-1)*block_size + 1):min(i*block_size, n_samples)
+block_size <- 100
+blocks     <- split(keep_cols, ceiling(seq_along(keep_cols)/block_size))
+
+for (b in seq_along(blocks)) {
+  cols    <- blocks[[b]]      
+  raw_mat <- dset[cols, ]     
+  mat     <- t(raw_mat)     
   
-  # [samples_idx × genes] 
-  raw_block <- dset[samp_idx, ]
-  
-  # transpose → [genes × samples_idx]
-  mat <- t(raw_block)
-  
-  # optional sanity check
-  if (!all(dim(mat) == c(n_genes, length(samp_idx)))) {
-    stop(sprintf(
-      "Block %d: got %d×%d but expected %d×%d",
-      i, dim(mat)[1], dim(mat)[2], n_genes, length(samp_idx)
-    ))
-  }
-  
-  # write those columns into the FBM
-  archs4FBM[, samp_idx] <- mat
+  col_idx <- match(cols, keep_cols)
+  archs4FBM_sub[, col_idx] <- mat
 }
 
 h5$close_all()
@@ -158,9 +165,10 @@ saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 Precompute the SVD
 ```{r}
 # number of samples 888821
-# root of 888821 = 942, using as a k
+# square root of 888821 = 942, using as a k
+# square  root of 80000 = 282, using as a k
 
-k = 942
+k = 282
 archs4FBM.svd=big_randomSVD(archs4FBMfiltered, k = k)
 ```
 
