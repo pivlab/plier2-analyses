@@ -213,7 +213,7 @@ Chat=getChat(matchedPaths, method = "fast")
 
 Run PLIER2, setting `max.iter` low for demonstration
 ```{r}
-archs4.plier2=PLIERv2(archs4FBMfiltered, matchedPaths, sdres = archs4.sdres, Chat = Chat, doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 350)
+archs4.plier2=PLIERv2(archs4FBMfiltered, matchedPaths, sdres = archs4.sdres, Chat = Chat, doCrossval = T, multiplier = 3, max.U.updates = 3, max.iter = 350, k = k)
 ```
 
 ```{r}

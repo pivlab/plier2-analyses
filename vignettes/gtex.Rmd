@@ -154,7 +154,8 @@ saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 
 Precompute the SVD
 ```{r}
-gtexFBM.svd=big_randomSVD(gtexFBMfiltered, k = 200)
+k = 200
+gtexFBM.svd=big_randomSVD(gtexFBMfiltered, k = k)
 ```
 
 Run simpleDecomp as the base model 
@@ -162,7 +163,7 @@ Run simpleDecomp as the base model
 decomp_file <- file.path(output_nb_path, "gtexSimpleDecompResult.RDS")
 
 if (!file.exists(decomp_file)) {
-  gtex.sdres <- simpleDecomp(gtexFBMfiltered, k = 200, svdres = gtexFBM.svd)
+  gtex.sdres <- simpleDecomp(gtexFBMfiltered, k = k, svdres = gtexFBM.svd)
   saveRDS(gtex.sdres, file = decomp_file)
 } else {
   gtex.sdres <- readRDS(decomp_file)
@@ -207,7 +208,8 @@ time_taken2 <- system.time({
     doCrossval = TRUE,
     multiplier = 3,
     max.U.updates = 3,
-    max.iter = 350
+    max.iter = 350,
+    k = k
   )
 })
 
@@ -232,7 +234,7 @@ time_taken <- system.time({
     Chat = as.matrix(Chat), 
     doCrossval = TRUE, 
     max.iter = 350, 
-    k = 200
+    k = k
   )
 })
 

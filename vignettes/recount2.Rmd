@@ -224,7 +224,8 @@ time_taken2 <- system.time({
     doCrossval = TRUE,
     multiplier = 3,
     max.U.updates = 3,
-    max.iter = 350
+    max.iter = 350,
+    k = k
   )
 })
 
@@ -249,7 +250,7 @@ time_taken <- system.time({
     Chat = as.matrix(Chat), 
     doCrossval = TRUE, 
     max.iter = 350, 
-    k = 200
+    k = k
   )
 })
 
