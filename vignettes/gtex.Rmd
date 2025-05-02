@@ -40,7 +40,7 @@ Download GTEx
 
 ```{r download-gtex, message=FALSE, warning=FALSE}
 url      <- "https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
-dest_dir <- "data"
+dest_dir <- here("data/gtex")
 dest_gz  <- file.path(dest_dir, basename(url))
 
 if (!file.exists(dest_gz)) {
@@ -55,8 +55,8 @@ if (!file.exists(dest_gz)) {
 Process GTEx
 
 ```{r process-gtex, message=FALSE, warning=FALSE}
-exprs_path  <- "data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz"
-output_file <- "data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"
+exprs_path  <- here("data/gtex/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz")
+output_file <- here("data/gtex/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds")
 
 if (!file.exists(output_file)) {
   dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
@@ -76,7 +76,7 @@ if (!file.exists(output_file)) {
 
 Read in gtex RDS file 
 ```{r}
-gtex=readRDS(here("data/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"))
+gtex=readRDS(here("data/gtex/bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"))
 ```
 
 Aggregate in-place by 'description'

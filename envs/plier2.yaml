@@ -27,3 +27,7 @@ dependencies:
   - bioconductor-qvalue
   - r-hdf5r
   - bioconductor-biomart
+  - r-bitops
+  - r-gtools
+  - r-kernsmooth
+  - r-gplots
