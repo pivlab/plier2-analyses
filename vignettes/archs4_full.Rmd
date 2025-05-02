@@ -189,8 +189,11 @@ cleanFBM(archs4FBM)
 ```
 
 ```{r}
-rowStats=computeRowStatsFBM(archs4FBM)
+rowStats=computeRowStatsFBM(archs4FBM, chunk_size=1000)
+
+png(filename=file.path(output_nb_path, "gene_means_and_vars.png"))
 plot(rowStats$row_means, rowStats$row_variances, log="y")
+dev.off()
 ```
 
 Filter the data. Doing aggressive filtering to reduce the number of genes.
@@ -198,7 +201,10 @@ Filter the data. Doing aggressive filtering to reduce the number of genes.
 ```{r}
 filterResult=filterFBM(archs4FBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
 archs4FBMfiltered=filterResult$fbm_filtered
+message(paste("New filtered dataset dims: ", nrow(archs4FBMfiltered), " x ", ncol(archs4FBMfiltered)))
 gene_symbols_thin=gene_symbols_thin[filterResult$kept_rows]
+message(paste("Number of genes kept: ", dim(length(gene_symbols_thin))))
+
 rowStatsAll=rowStats
 rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
 rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
@@ -206,7 +212,7 @@ rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 
 Do the z-scoring
 ```{r}
-zscoreFBM(archs4FBMfiltered, rowStats = rowStats)
+zscoreFBM(archs4FBMfiltered, rowStats = rowStats, chunk_size=1000)
 ```
 
 save the FBM object for quick loading
