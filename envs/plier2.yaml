@@ -26,3 +26,4 @@ dependencies:
   - r-plyr
   - bioconductor-qvalue
   - r-hdf5r
+  - bioconductor-biomart
