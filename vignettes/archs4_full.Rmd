@@ -113,16 +113,21 @@ gene_lengths <- gene_lengths[gene_symbols_thin]
 n_genes_thin <- length(gene_symbols_thin)
 ```
 
-Create FBM matrix
+Create or open FBM matrix
 
 ```{r}
 fbm_file  <- file.path(output_nb_path, "FBMarchs4")
+
+# file fbm_file exists, we open it, not create it.
+fbm_file_exists <- file.exists(paste0(fbm_file, ".bk"))
+
 archs4FBM <- FBM(
   nrow        = n_genes_thin,
   ncol        = n_samples,
 #  type        = "float",
   backingfile = fbm_file,
-  create_bk   = TRUE
+  create_bk   = !fbm_file_exists,
+#  is_read_only   = fbm_file_exists,
 )
 ```
 
@@ -132,39 +137,44 @@ Populate it with data
 block_size <- 100
 n_blocks   <- ceiling(n_samples / block_size)
 
-pb <- txtProgressBar(min = 0, max = n_blocks, style = 3)
+if (!fbm_file_exists) {
+  pb <- txtProgressBar(min = 0, max = n_blocks, style = 3)
 
-for (i in 1:n_blocks) {
-  setTxtProgressBar(pb, i)
+  for (i in 1:n_blocks) {
+    setTxtProgressBar(pb, i)
 
-  start_row <- (i-1) * block_size + 1
-  end_row <- min(i * block_size, n_samples)
+    start_row <- (i-1) * block_size + 1
+    end_row <- min(i * block_size, n_samples)
 
-  # FIXME: here I apply CPM normalization; it might not be the best approach,
-  # but reading the h5 file by genes (instead of by samples) is very slow, and
-  # this is needed for TPM/etc
-  #raw_block <- t(cpm_norm(dset[start_row:end_row, ]))
+    # FIXME: here I apply CPM normalization; it might not be the best approach,
+    # but reading the h5 file by genes (instead of by samples) is very slow, and
+    # this is needed for TPM/etc
+    #raw_block <- t(cpm_norm(dset[start_row:end_row, ]))
 
-  # tpm
-  raw_block <- NULL
-  tryCatch(
-    expr = {
-      raw_block <- dset[start_row:end_row, ]
-    },
-    error = function(e) {
-      message(paste("Error with block: ", i))
+    # tpm
+    raw_block <- NULL
+    tryCatch(
+      expr = {
+        raw_block <- dset[start_row:end_row, ]
+      },
+      error = function(e) {
+        message(paste("Error with block: ", i))
+      }
+    )
+    if (is.null(raw_block)) {
+      # FIXME: I add a dummy block here with near-to-zero values; not sure if
+      # this is the best approach here; for some reason, there is a block that
+      # cannot be read in ARCHS4, so I "skip" it here
+      raw_block <- matrix(1e-10, (end_row - start_row + 1), n_genes)
     }
-  )
-  if (is.null(raw_block)) {
-    # FIXME: the FBM file will have zero rows here
-    raw_block <- matrix(1e-10, (end_row - start_row + 1), n_genes)
+
+    raw_block <- raw_block[, gene_symbols_idx]
+    raw_block <- t(tpm_norm(raw_block, gene_lengths))
+
+    archs4FBM[, start_row:end_row] <- as.matrix(raw_block)
   }
-
-  raw_block <- raw_block[, gene_symbols_idx]
-  raw_block <- t(tpm_norm(raw_block, gene_lengths))
-  #raw_block <- t(tpm_norm(dset[start_row:end_row, gene_symbols_idx], gene_lengths))
-
-  archs4FBM[, start_row:end_row] <- as.matrix(raw_block)
+} else {
+  message("FBM file already exists")
 }
 ```
 

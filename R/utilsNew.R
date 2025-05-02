@@ -98,22 +98,32 @@ cleanFBM=function(fbm){
   max_value <- -Inf
   has_na <- FALSE
   
+  # row version:
+  #big_apply(fbm, a.FUN = function(X, ind) {
+  #  max_value <<- max(max_value, max(X[ind, ], na.rm = TRUE))
+  #  if (anyNA(X[ind, ])) {
+  #    has_na <<- TRUE
+  #  }
+  #  NULL  # No return, just updating global values
+  #}, ind = rows_along(fbm), block.size=block_size(ncol(fbm), 1))
+
+  # col version:
   big_apply(fbm, a.FUN = function(X, ind) {
-    max_value <<- max(max_value, max(X[ind, ], na.rm = TRUE))
-    if (anyNA(X[ind, ])) {
+    max_value <<- max(max_value, max(X[, ind], na.rm = TRUE))
+    if (anyNA(X[, ind])) {
       has_na <<- TRUE
     }
     NULL  # No return, just updating global values
-  }, ind = rows_along(fbm))
+  }, ind = cols_along(fbm))
   
   # Step 2: Log2 transform if necessary
   if (max_value >= 100) {
     message("Applying log2 transformation")
     big_apply(fbm, a.FUN = function(X, ind) {
-      X[ind, ] <- log2(X[ind, ] + 1)
-    }, ind = rows_along(fbm))
-  }
-  else{
+      X[, ind] <- log2(X[, ind] + 1)
+      NULL
+    }, ind = cols_along(fbm))
+  } else {
     message("Already on log scale")
   }
   
@@ -121,11 +131,10 @@ cleanFBM=function(fbm){
   if (has_na) {
     message("Filling NAs with 0")
     big_apply(fbm, a.FUN = function(X, ind) {
-      X[ind, ][is.na(X[ind, ])] <- 0
+      X[, ind][is.na(X[, ind])] <- 0
       NULL
-    }, ind = rows_along(fbm))
-  }
-  else{
+    }, ind = cols_along(fbm))
+  } else {
     message("No NA values found")
   }
   
