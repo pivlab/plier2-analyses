@@ -119,7 +119,7 @@ Populate it with data
 # h5$close_all()
 
 block_size <- 100
-blocks     <- split(keep_cols, ceiling(seq_along(keep_cols)/block_size))
+blocks     <- split(keep_cols, ceiling(length(keep_cols)/block_size))
 
 for (b in seq_along(blocks)) {
   cols    <- blocks[[b]]      
