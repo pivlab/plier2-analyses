@@ -242,3 +242,47 @@ randomProjection <- function(input_matrix, rd, verbose = TRUE, pos=F) {
     return(result)
   }
 }
+
+cpm_norm <- function(m) {
+  # total counts per sample
+  lib_sizes <- rowSums(m)
+  # scaling factors in millions of reads
+  sf <- lib_sizes / 1e6
+  # divide each row by its scaling factor
+  normalized <- m / sf
+  rownames(normalized) <- rownames(m)
+  colnames(normalized) <- colnames(m)
+  return(normalized)
+}
+
+tpm_norm <- function(counts, gene.lengths) {
+  if (!is.matrix(counts)) {
+    stop("`counts` must be a matrix.")
+  }
+  counts <- as.matrix(counts)
+  
+  if (is.null(names(gene.lengths))) {
+    stop("`gene.lengths` must be a named numeric vector.")
+  }
+  if (!all(colnames(counts) %in% names(gene.lengths))) {
+    stop("All column names of `counts` must be in names(gene.lengths).")
+  }
+  
+  # Reorder lengths to match columns
+  #lengths.bp <- gene.lengths[colnames(counts)]
+  
+  # Convert lengths to kilobases
+  lengths.kb <- gene.lengths / 1e3
+  
+  # 1) Divide counts by gene length in kilobases → reads per kilobase
+  rpk <- sweep(counts, 2, lengths.kb, FUN = "/")
+  
+  # 2) Compute per-sample scaling factor: sum of RPKs
+  per.sample.sum <- rowSums(rpk)
+  
+  # 3) Divide RPKs by the sum and multiply by 1e6 → TPM
+  tpm <- sweep(rpk, 1, per.sample.sum, FUN = "/") * 1e6
+  
+  return(tpm)
+}
+
