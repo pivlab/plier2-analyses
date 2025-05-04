@@ -1,0 +1,100 @@
+---
+title: "ARCHS4 - PLIERv2"
+output: html_document
+---
+
+```{r load_config}
+library(here)
+source(here("config.R"))
+```
+
+```{r load_functions}
+source(here("R/solvers.R"))
+source(here("R/utilsNew.R"))
+```
+
+```{r load_libraries}
+
+```
+
+```{r paths}
+output_dir <- config$ARCHS4$DATASET_FOLDER
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+```{r}
+meta <- readRDS(file.path(output_dir, "metadata.rds"))
+gene_symbols_idx <- meta$gene_symbols_idx
+gene_symbols_thin <- meta$gene_symbols_thin
+gene_lengths <- meta$gene_lengths
+n_genes_thin <- meta$n_genes_thin
+n_samples <- meta$n_samples
+```
+
+
+```{r}
+fbm_file  <- file.path(output_dir, "fbm")
+output_file <- paste0(fbm_file, "_filtered")
+
+fbm_obj_filtered <- FBM(
+  nrow        = n_genes_thin,
+  ncol        = n_samples,
+  backingfile = output_file ,
+  create_bk   = FALSE,
+)
+```
+
+Load simpleDecomp
+
+```{r simpleDecomp}
+decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
+fbm_obj.sdres <- readRDS(decomp_file)
+```
+
+Download some pathways
+
+```{r get_pathways}
+# FIXME: we should download the pathways before and only once, and then load
+# them here
+gmtList=list()
+
+gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
+gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
+gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
+gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
+gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
+```
+
+Create a pathMat object and save
+```{r assemble_path_matrix}
+pathMat = gmtListToSparseMat(gmtList[c(5)])
+#saveRDS(gmtList, "gmtList.RDS")
+#saveRDS(pathMat, "pathMat.RDS")
+```
+
+Get a matched pathway set
+The FBM version doesn't do any subsetting, everything has to match exactly
+
+```{r get_chat}
+matchedPaths=getMatchedPathwayMat(pathMat, gene_symbols_thin)
+Chat=getChat(matchedPaths, method = "fast")
+```
+
+# Run PLIER2
+
+```{r run_plier2}
+fbm_obj.plier2 <- PLIERv2(
+  fbm_obj_filtered,
+  matchedPaths,
+  sdres = fbm_obj.sdres,
+  Chat = Chat,
+  doCrossval = T,
+  multiplier = config$ARCHS4$PLIER_PARAMS$MULTIPLIER,
+  max.U.updates = config$ARCHS4$PLIER_PARAMS$MAX_U_UPDATES,
+  max.iter = config$ARCHS4$PLIER_PARAMS$MAX_ITER,
+  k = config$ARCHS4$PLIER_PARAMS$K,
+  ncores=config$ARCHS4$PLIER_PARAMS$N_CORES
+)
+
+saveRDS(fbm_obj.plier2, file = file.path(output_dir, paste0(config$ARCHS4$DATASET_NAME, "_PLIER2.rds")))
+```
