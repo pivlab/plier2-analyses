@@ -1,0 +1,31 @@
+---
+title: "ARCHS4 - Data download"
+output: html_document
+---
+
+```{r load_config}
+library(here)
+source(here("config.R"))
+```
+
+```{r load_libraries}
+```
+
+```{r paths}
+output_dir <- dirname(config$ARCHS4$DATASET_FILE)
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+```{r download_archs4_if_needed, eval = TRUE, echo = TRUE, message = TRUE}
+if (!file.exists(config$ARCHS4$DATASET_FILE)) {
+  command <- sprintf("wget -c '%s' -O '%s'", config$ARCHS4$URL, config$ARCHS4$DATASET_FILE)
+  tryCatch({
+    system(command)
+    cat("File downloaded successfully to:", config$ARCHS4$DATASET_FILE, "\n")
+  }, error = function(e) {
+    cat("Error during download:", e$message, "\n")
+  })
+} else {
+  cat("File already exists. Skipping download.\n")
+}
+```
