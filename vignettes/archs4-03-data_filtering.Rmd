@@ -21,7 +21,7 @@ output_dir <- config$ARCHS4$DATASET_FOLDER
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 ```
 
-```{r}
+```{r load_metadata}
 meta <- readRDS(file.path(output_dir, "metadata.rds"))
 gene_symbols_idx <- meta$gene_symbols_idx
 gene_symbols_thin <- meta$gene_symbols_thin
@@ -31,7 +31,7 @@ n_samples <- meta$n_samples
 ```
 
 
-```{r}
+```{r read_fbm}
 fbm_file  <- file.path(output_dir, "fbm")
 
 fbm_obj <- FBM(
