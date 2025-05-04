@@ -203,35 +203,6 @@ zscoreFBM <- function(fbm, rowStats, chunk_size = 1000) {
 }
 
 
-zscoreFBM_opt <- function(fbm, rowStats, ncores = 1) {
-  message("Applying Z-score transformation")
-
-  # Unpack row stats
-  row_means <- rowStats$row_means
-  row_sds   <- sqrt(rowStats$row_variances)
-
-  # Block-wise transform
-  big_apply(
-    X         = fbm,
-    a.FUN     = function(X, ind, means, sds) {
-      # X is the block matrix (nrow × length(ind))
-      # 'ind' are the column indices for this block
-      # We subtract and divide in place:
-      X[,] <- (X[,] - means) / sds
-      # Return NULL since we modify fbm in place
-      NULL
-    },
-    ind       = cols_along(fbm),    # split over columns
-    ncores    = ncores,             # parallelize over blocks
-    # Pass the precomputed stats into each call
-    means = row_means,
-		sds = row_sds
-  )
-}
-
-
-
-
 
 
 

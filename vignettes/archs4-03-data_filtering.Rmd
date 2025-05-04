@@ -62,6 +62,7 @@ options(default.nproc.blas = NULL)
 #} else {
 #  rowStats <- readRDS(output_file)
 #}
+options(bigstatsr.check.parallel.blas = TRUE)
 options(default.nproc.blas = blas_nproc)
 ```
 
@@ -107,6 +108,7 @@ message(paste("New filtered dataset dims: ", nrow(fbm_obj_filtered), " x ", ncol
 ```{r update_gene_symbols}
 # update
 gene_symbols_thin=gene_symbols_thin[filterResult$kept_rows]
+n_genes_thin <- length(gene_symbols_thin)
 
 # save
 saveRDS(
@@ -114,9 +116,10 @@ saveRDS(
     gene_symbols_idx=gene_symbols_idx,
     gene_symbols_thin=gene_symbols_thin,
     gene_lengths=gene_lengths,
-    n_genes_thin=n_genes_thin
+    n_genes_thin=n_genes_thin,
+    n_samples=n_samples
   ),
-  file.path(output_dir, "genes_meta.rds")
+  file.path(output_dir, "metadata.rds")
 )
 ```
 
@@ -132,14 +135,6 @@ rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 
 ```{r zscore}
 # TODO: add a way to check if this needs to be done
-# zscoreFBM(filterResult$fbm_filtered, rowStats = rowStats, chunk_size=config$GENERAL$CHUNK_SIZE)
-
-options(bigstatsr.check.parallel.blas = FALSE)
-blas_nproc <- getOption("default.nproc.blas")
-options(default.nproc.blas = NULL)
-
-zscoreFBM_opt(fbm_obj_filtered, rowStats = rowStats, ncores=config$GENERAL$N_CORES)
-
-options(default.nproc.blas = blas_nproc)
+zscoreFBM(fbm_obj_filtered, rowStats = rowStats, chunk_size=config$GENERAL$CHUNK_SIZE)
 ```
 
