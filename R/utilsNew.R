@@ -93,87 +93,90 @@ pinv.ridge=function (m, alpha = 0)
 BH= function(pval){p.adjust(pval, method="BH")}
 
 
-cleanFBM=function(fbm){
-  # Step 1: Check for NA and max value
-  max_value <- -Inf
-  has_na <- FALSE
-  
-  # row version:
-  #big_apply(fbm, a.FUN = function(X, ind) {
-  #  max_value <<- max(max_value, max(X[ind, ], na.rm = TRUE))
-  #  if (anyNA(X[ind, ])) {
-  #    has_na <<- TRUE
-  #  }
-  #  NULL  # No return, just updating global values
-  #}, ind = rows_along(fbm), block.size=block_size(ncol(fbm), 1))
+cleanFBM <- function(fbm, ncores = 1) {
+  # 1. Block‐wise scan for max and NA
+  stats <- big_apply(
+    fbm,
+    a.FUN = function(X, ind) {
+      vals <- X[, ind, drop = FALSE]
+      list(
+        max  = if (all(is.na(vals))) NA_real_ else max(vals, na.rm = TRUE),
+        na   = anyNA(vals)
+      )
+    },
+    a.combine = function(...) {
+      Reduce(function(a, b) {
+        list(
+          max = max(a$max, b$max, na.rm = TRUE),
+          na  = a$na  || b$na
+        )
+      }, list(...))
+    },
+    ind        = cols_along(fbm),
+    ncores     = ncores,
+  )
 
-  # col version:
-  big_apply(fbm, a.FUN = function(X, ind) {
-    max_value <<- max(max_value, max(X[, ind], na.rm = TRUE))
-    if (anyNA(X[, ind])) {
-      has_na <<- TRUE
-    }
-    NULL  # No return, just updating global values
-  }, ind = cols_along(fbm))
-  
-  # Step 2: Log2 transform if necessary
-  if (max_value >= 100) {
+  max_value <- stats$max
+  has_na    <- stats$na
+
+  # 2. Log2 transform if necessary
+  if (!is.na(max_value) && max_value >= 100) {
     message("Applying log2 transformation")
-    big_apply(fbm, a.FUN = function(X, ind) {
-      X[, ind] <- log2(X[, ind] + 1)
-      NULL
-    }, ind = cols_along(fbm))
+    big_apply(
+      fbm,
+      a.FUN     = function(X, ind) { X[, ind] <- log2(X[, ind] + 1); NULL },
+      ind       = cols_along(fbm),
+      ncores    = ncores,
+    )
   } else {
-    message("Already on log scale")
+    message("Already on log scale or all NA")
   }
-  
-  # Step 3: Fill NAs with 0 if necessary
+
+  # 3. Fill NAs if present
   if (has_na) {
     message("Filling NAs with 0")
-    big_apply(fbm, a.FUN = function(X, ind) {
-      X[, ind][is.na(X[, ind])] <- 0
-      NULL
-    }, ind = cols_along(fbm))
+    big_apply(
+      fbm,
+      a.FUN     = function(X, ind) { X[, ind][is.na(X[, ind])] <- 0; NULL },
+      ind       = cols_along(fbm),
+      ncores    = ncores,
+    )
   } else {
     message("No NA values found")
   }
-  
+
   return(list(max_value = max_value, had_na = has_na))
 }
 
 
+computeRowStatsFBM <- function(fbm, ncores = 1) {
+  # Compute row sums in blocks
+  row_sums <- big_apply(
+    fbm,
+    a.FUN     = function(X, ind) rowSums(X[, ind]),
+    a.combine = "plus",
+    ncores    = ncores
+  )
 
-computeRowStatsFBM <- function(fbm, chunk_size = 1000) {
-  n_rows <- nrow(fbm)
+  # Compute row sums of squares in blocks
+  row_sums_sq <- big_apply(
+    fbm,
+    a.FUN     = function(X, ind) rowSums(X[, ind]^2),
+    a.combine = "plus",
+    ncores    = ncores
+  )
+
   n_cols <- ncol(fbm)
-  
-  # Initialize vectors to store row sums and row sums of squares
-  row_sums <- numeric(n_rows)
-  row_sums_sq <- numeric(n_rows)
-  
-  # Iterate over columns in chunks
-  for (start_col in seq(1, n_cols, by = chunk_size)) {
-    end_col <- min(start_col + chunk_size - 1, n_cols)
-    
-    # Extract the current chunk of columns
-    col_chunk <- fbm[, start_col:end_col]
-    
-    # Update row sums and sums of squares
-    row_sums <- row_sums + rowSums(col_chunk)
-    row_sums_sq <- row_sums_sq + rowSums(col_chunk^2)
-  }
-  
-  # Compute row means and variances
-  row_means <- row_sums / n_cols
+  # Final means and variances
+  row_means     <- row_sums / n_cols
   row_variances <- (row_sums_sq / n_cols) - (row_means^2)
-  
-  return(list(row_means = row_means, row_variances = row_variances))
+
+  list(row_means = row_means, row_variances = row_variances)
 }
 
 
+
 zscoreFBM <- function(fbm, rowStats, chunk_size = 1000) {
-  
-  
   message("Applying Z-score transformation")
   
   row_means <- rowStats$row_means
@@ -199,6 +202,41 @@ zscoreFBM <- function(fbm, rowStats, chunk_size = 1000) {
   }
 }
 
+
+zscoreFBM_opt <- function(fbm, rowStats, ncores = 1) {
+  message("Applying Z-score transformation")
+
+  # Unpack row stats
+  row_means <- rowStats$row_means
+  row_sds   <- sqrt(rowStats$row_variances)
+
+  # Block-wise transform
+  big_apply(
+    X         = fbm,
+    a.FUN     = function(X, ind, means, sds) {
+      # X is the block matrix (nrow × length(ind))
+      # 'ind' are the column indices for this block
+      # We subtract and divide in place:
+      X[,] <- (X[,] - means) / sds
+      # Return NULL since we modify fbm in place
+      NULL
+    },
+    ind       = cols_along(fbm),    # split over columns
+    ncores    = ncores,             # parallelize over blocks
+    # Pass the precomputed stats into each call
+    means = row_means,
+		sds = row_sds
+  )
+}
+
+
+
+
+
+
+
+
+
 filterFBM<- function(fbm, rowStats, mean_cutoff = NULL, var_cutoff = NULL, backingfile = "filtered_fbm") {
   row_means <- rowStats$row_means
   row_variances <- rowStats$row_variances
@@ -222,8 +260,13 @@ filterFBM<- function(fbm, rowStats, mean_cutoff = NULL, var_cutoff = NULL, backi
   }
   
   # Create a new FBM with the filtered data
-  fbm_filtered <- FBM(n_kept, ncol(fbm), backingfile = backingfile)
-  fbm_filtered[] <- fbm[keep_rows, ]
+  fbm_filtered <- big_copy(
+    X           = fbm,
+    ind.row     = which(keep_rows),
+    #ind.col     = cols_along(fbm),
+    backingfile = backingfile
+  )
+
   
   return(list(fbm_filtered = fbm_filtered, kept_rows = which(keep_rows)))
 }

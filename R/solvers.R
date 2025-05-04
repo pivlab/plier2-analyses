@@ -1,10 +1,10 @@
 
 
-mat_mult <- function(mat1, mat2) {
+mat_mult <- function(mat1, mat2, ncores=1) {
   is_fbm <- inherits(mat1, "FBM") 
   if (is_fbm ) {
     # For FBM objects, use the specific multiplication method
-    return(big_prodMat(mat1, as.matrix(mat2)))
+    return(big_prodMat(mat1, as.matrix(mat2), ncores=ncores))
   } else {
     # Regular matrix multiplication
     return(mat1 %*% mat2)
@@ -277,7 +277,7 @@ getBestIndex=function(gres, se=F){
 
 simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
                       Zpos=T,max.iter=200, tol=5e-6, trace=F,
-                      rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0){
+                      rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0, ncores=1){
   
   
   #message("Checking type")
@@ -377,7 +377,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   for ( i in 1:max.iter){
     setTxtProgressBar(pb, i) # Avoid exceeding 100
     #main loop    
-    Zraw=Z=mat_mult(Y,t(B))%*%solve(tcrossprod(B)+L1*diag(k))
+    Zraw=Z=mat_mult(Y,t(B), ncores=ncores)%*%solve(tcrossprod(B)+L1*diag(k))
     
     if(i>=adaptive.iter && adaptive.frac>0){
       
@@ -397,12 +397,12 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     
     
     if(is_fbm){
-    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
     ZY=t(ZYt)
     B=solve(t(Z)%*%Z+L2k)%*%ZY
     }
     else{
-    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
     }
     
     #update error
@@ -452,7 +452,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
 
 
 
-PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=5, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=1e-6, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("complete", "fast"), multiplier=1, adaptive.frac=0){
+PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=5, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=1e-6, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("complete", "fast"), multiplier=1, adaptive.frac=0, ncores=1){
   
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
   
@@ -620,12 +620,12 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   L2k=L2*diag(k)
   
   if(is_fbm){
-    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
     ZY=t(ZYt)
     B=solve(t(Z)%*%Z+L2k)%*%ZY
   }
   else{
-    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
   }
   
   for ( iter in 1:max.iter){
@@ -654,7 +654,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       
       curfrac=(npos<-sum(apply(U,2,max)>0))/k
       #Z1=Y%*%t(B)
-      Z1=mat_mult(Y, t(B))
+      Z1=mat_mult(Y, t(B), ncores=ncores)
       ratio=median((Z2/Z1)[Z2>0&Z1>0])
       Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
       
@@ -663,7 +663,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     
     else{
       
-      Z=mat_mult(Y,t(B))%*%solve(tcrossprod(B)+L1k)
+      Z=mat_mult(Y,t(B),ncores=ncores)%*%solve(tcrossprod(B)+L1k)
     }
     
     
@@ -689,12 +689,12 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
 
     
     if(is_fbm){
-      ZYt=big_cprodMat(Y, as.matrix(Z))
+      ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
       ZY=t(ZYt)
       B=solve(t(Z)%*%Z+L2k)%*%ZY
     }
     else{
-      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
     }
     
 
@@ -762,7 +762,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
 }
 
 
-projectPLIER = function(PLIERres, newdata, scale=1) {
+projectPLIER = function(PLIERres, newdata, scale=1, ncores=1) {
   stopifnot(nrow(PLIERres$Z) == nrow(newdata))
   
   # Check if newdata is a FBM/big.matrix object
@@ -774,7 +774,7 @@ projectPLIER = function(PLIERres, newdata, scale=1) {
   if (is_fbm) {
     # FBM implementation - use big_cprodMat for efficient computation
     # But ensure Z is a standard matrix, not a Matrix package object
-    ZYt = big_cprodMat(newdata, Z_matrix)
+    ZYt = big_cprodMat(newdata, Z_matrix, ncores=ncores)
     ZY = t(ZYt)
   } else {
     # Standard matrix implementation - use regular matrix multiplication

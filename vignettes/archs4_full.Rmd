@@ -1,7 +1,7 @@
-# ARCHS4 preprocessing
+# ARCHS4
 
 Load libraries
-```{r}
+```{r load_libraries}
 library(bigstatsr)
 library(data.table)
 library(dplyr)
@@ -12,19 +12,36 @@ library(knitr)
 library(here)
 library(hdf5r)
 library(biomaRt)
-#library(EDASeq)
+```
+
+Settings
+
+```{r settings}
+DATASET_NAME <- "archs4_full"
+N_CORES <- nb_cores() %/% 3
+CHUNK_SIZE <- 1000
+
+GENES_MEAN_CUTOFF <- 1
+GENES_VAR_CUTOFF <- 0.1
+
+# number of samples 888821
+# square root of 888821 = 942, using as a k
+K <- 942
+PLIER_MULTIPLIER <- 3
+PLIER_MAX_U_UPDATES <- 3
+PLIER_MAX_ITER <- 350
 ```
 
 Output 
 
-```{r}
-output_nb_path <- here("output/vignettes/plier2_testing/archs4_full")
+```{r output_paths}
+output_nb_path <- here(file.path("output/vignettes/plier2_testing/", DATASET_NAME))
 dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
 ```
 
 Load the local files
 
-```{r}
+```{r load_functions}
 source(here("R/solvers.R"))
 source(here("R/utilsNew.R"))
 ```
@@ -53,7 +70,8 @@ if (!file.exists(output_file)) {
 ```
 
 Read in ARCHS4 file 
-```{r}
+
+```{r read_input_data}
 file_path <- here("data/archs4/human_gene_v2.5.h5")
 h5        <- H5File$new(file_path, mode = "r")
 dset      <- h5[["/data/expression"]]
@@ -66,9 +84,7 @@ n_samples    <- length(sample_names)
 
 Get gene lengths for this Ensembl version
 
-```{r}
-#FIXME: this is only needed if we apply TPM normalization
-#
+```{r get_gene_lengths}
 # TODO: check, I'm not entirely sure if this is the best way to get gene
 # lengths (using EDASeq, below, was giving an error)
 output_file <- file.path(output_nb_path, "gene_lengths.rds")
@@ -95,7 +111,6 @@ if (!file.exists(output_file)) {
   cat("File already exists. Skipping download.\n")
 }
 
-
 #if (!file.exists(output_file)) {
 #  gene_lengths <- EDASeq::getGeneLengthAndGCContent(gene_ids, "hsa")
 #  saveRDS(gene_lengths, file = output_file)
@@ -105,7 +120,7 @@ if (!file.exists(output_file)) {
 #}
 ```
 
-```{r}
+```{r adjust_gene_symbols}
 # keep in data only genes for which we have lengths
 gene_symbols_idx <- which( gene_symbols %in% names(gene_lengths) )
 gene_symbols_thin <- gene_symbols[gene_symbols_idx]
@@ -115,26 +130,25 @@ n_genes_thin <- length(gene_symbols_thin)
 
 Create or open FBM matrix
 
-```{r}
-fbm_file  <- file.path(output_nb_path, "FBMarchs4")
+```{r create_fbm}
+fbm_file  <- file.path(output_nb_path, "FBMfull")
 
 # file fbm_file exists, we open it, not create it.
 fbm_file_exists <- file.exists(paste0(fbm_file, ".bk"))
 
-archs4FBM <- FBM(
+fbm_obj <- FBM(
   nrow        = n_genes_thin,
   ncol        = n_samples,
 #  type        = "float",
   backingfile = fbm_file,
   create_bk   = !fbm_file_exists,
-#  is_read_only   = fbm_file_exists,
 )
 ```
 
 Populate it with data
 
-```{r}
-block_size <- 100
+```{r populate_fbm}
+block_size <- CHUNK_SIZE
 n_blocks   <- ceiling(n_samples / block_size)
 
 if (!fbm_file_exists) {
@@ -145,11 +159,6 @@ if (!fbm_file_exists) {
 
     start_row <- (i-1) * block_size + 1
     end_row <- min(i * block_size, n_samples)
-
-    # FIXME: here I apply CPM normalization; it might not be the best approach,
-    # but reading the h5 file by genes (instead of by samples) is very slow, and
-    # this is needed for TPM/etc
-    #raw_block <- t(cpm_norm(dset[start_row:end_row, ]))
 
     # tpm
     raw_block <- NULL
@@ -171,53 +180,86 @@ if (!fbm_file_exists) {
     raw_block <- raw_block[, gene_symbols_idx]
     raw_block <- t(tpm_norm(raw_block, gene_lengths))
 
-    archs4FBM[, start_row:end_row] <- as.matrix(raw_block)
+    fbm_obj[, start_row:end_row] <- as.matrix(raw_block)
   }
+
+	# run cleanFBM (log, NAs handling, etc)
+  cleanFBM(fbm_obj, ncores=N_CORES)
 } else {
   message("FBM file already exists")
 }
 ```
 
-Once done, close h5 file:
+Once done, close h5 file
 
-```{r}
+```{r close_h5}
 h5$close_all()
 ```
 
-```{r}
-cleanFBM(archs4FBM)
-```
+Compute gene stats
 
-```{r}
-rowStats=computeRowStatsFBM(archs4FBM, chunk_size=1000)
+```{r get_fbm_stats_and_plot}
+output_file <- file.path(output_nb_path, "row_stats.rds")
 
-png(filename=file.path(output_nb_path, "gene_means_and_vars.png"))
-plot(rowStats$row_means, rowStats$row_variances, log="y")
-dev.off()
+if (!file.exists(output_file)) {
+  rowStats=computeRowStatsFBM(fbm_obj, ncores=N_CORES)
+  saveRDS(rowStats, file = output_file)
+
+  png(filename=file.path(output_nb_path, "gene_means_and_vars.png"))
+  plot(rowStats$row_means, rowStats$row_variances, log="y")
+  dev.off()
+} else {
+  rowStats <- readRDS(output_file)
+}
 ```
 
 Filter the data. Doing aggressive filtering to reduce the number of genes.
 
-```{r}
-filterResult=filterFBM(archs4FBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
-archs4FBMfiltered=filterResult$fbm_filtered
-message(paste("New filtered dataset dims: ", nrow(archs4FBMfiltered), " x ", ncol(archs4FBMfiltered)))
+```{r filter_fbm_and_zscore}
+output_file <- paste0(fbm_file, "_filtered")
+kept_rows_output_file <- file.path(output_nb_path, "kept_rows.rds")
+
+if (!file.exists(output_file)) {
+	filterResult=filterFBM(
+		fbm_obj,
+		rowStats,
+		mean_cutoff = GENES_MEAN_CUTOFF,
+		var_cutoff = GENES_VAR_CUTOFF,
+		backingfile = output_file
+	)
+
+  saveRDS(filterResult$kept_rows, kept_rows_output_file)
+
+  # TODO: add a way to check if this needs to be done
+	rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
+	rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
+  zscoreFBM(filterResult$fbm_filtered, rowStats = rowStats, chunk_size=CHUNK_SIZE)
+  # zscoreFBM_opt(fbm_obj_filtered, ncores=N_CORES)
+} else {
+  filterResult <- list()
+
+	filterResult$fbm_filtered <- FBM(
+		nrow        = n_genes_thin,
+		ncol        = n_samples,
+		backingfile = fbm_file,
+		create_bk   = !fbm_file_exists,
+	)
+
+  filterResult$kept_rows <- readRDS(kept_rows_output_file)
+}
+
+fbm_obj_filtered=filterResult$fbm_filtered
+message(paste("New filtered dataset dims: ", nrow(fbm_obj_filtered), " x ", ncol(fbm_obj_filtered)))
+
 gene_symbols_thin=gene_symbols_thin[filterResult$kept_rows]
-message(paste("Number of genes kept: ", dim(length(gene_symbols_thin))))
+message(paste("Number of genes kept: ", length(gene_symbols_thin)))
 
-rowStatsAll=rowStats
-rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
-rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 ```
 
-Do the z-scoring
-```{r}
-zscoreFBM(archs4FBMfiltered, rowStats = rowStats, chunk_size=1000)
-```
+Save the FBM object for quick loading
 
-save the FBM object for quick loading
-```{r}
-archs4FBMfiltered$save()
+```{r save_fbm_filtered}
+#fbm_obj_filtered$save()
 
 meta <- list()
 meta$rowNames <- gene_symbols_thin
@@ -226,29 +268,39 @@ saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 ```
 
 Precompute the SVD
-```{r}
-# number of samples 888821
-# square root of 888821 = 942, using as a k
-# square  root of 80000 = 282, using as a k
 
-k = 942
-archs4FBM.svd=big_randomSVD(archs4FBMfiltered, k = k)
+```{r randomSVD}
+fbm_obj.svd=big_randomSVD(
+  fbm_obj_filtered,
+  k = K,
+  ncores = N_CORES
+)
 ```
 
 Run simpleDecomp as the base model 
-```{r}
-decomp_file <- file.path(output_nb_path, "archs4SimpleDecompResult.RDS")
+
+```{r simpleDecomp}
+decomp_file <- file.path(output_nb_path, "simpleDecompResult.RDS")
 
 if (!file.exists(decomp_file)) {
-  archs4.sdres <- simpleDecomp(archs4FBMfiltered, k = k, svdres = archs4FBM.svd)
-  saveRDS(archs4.sdres, file = decomp_file)
+  fbm_obj.sdres <- simpleDecomp(
+    fbm_obj_filtered,
+    k = K,
+    svdres = fbm_obj.svd,
+    ncores = N_CORES
+  )
+
+  saveRDS(fbm_obj.sdres, file = decomp_file)
 } else {
-  archs4.sdres <- readRDS(decomp_file)
+  fbm_obj.sdres <- readRDS(decomp_file)
 }
 ```
 
 Download some pathways
-```{r}
+
+```{r get_pathways}
+# FIXME: we should download the pathways before and only once, and then load
+# them here
 gmtList=list()
 
 gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
@@ -259,7 +311,7 @@ gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?
 ```
 
 Create a pathMat object and save
-```{r}
+```{r assemble_path_matrix}
 pathMat = gmtListToSparseMat(gmtList[c(5)])
 #saveRDS(gmtList, "gmtList.RDS")
 #saveRDS(pathMat, "pathMat.RDS")
@@ -267,28 +319,28 @@ pathMat = gmtListToSparseMat(gmtList[c(5)])
 
 Get a matched pathway set
 The FBM version doesn't do any subsetting, everything has to match exactly
-```{r}
+
+```{r get_chat}
 matchedPaths=getMatchedPathwayMat(pathMat, meta$rowNames)
 Chat=getChat(matchedPaths, method = "fast")
 ```
 
 # Run PLIER2
 
-Run PLIER2, setting `max.iter` low for demonstration
-```{r}
-archs4.plier2 <- PLIERv2(
-  archs4FBMfiltered,
+```{r run_plier2}
+fbm_obj.plier2 <- PLIERv2(
+  fbm_obj_filtered,
   matchedPaths,
-  sdres = archs4.sdres,
+  sdres = fbm_obj.sdres,
   Chat = Chat,
   doCrossval = T,
-  multiplier = 3,
-  max.U.updates = 3,
-  max.iter = 350,
-  k = k,
+  multiplier = PLIER_MULTIPLIER,
+  max.U.updates = PLIER_MAX_U_UPDATES,
+  max.iter = PLIER_MAX_ITER,
+  k = K,
+  ncores=N_CORES
 )
+
+saveRDS(fbm_obj.plier2, file = file.path(output_nb_path, paste0(DATASET_NAME, "_PLIER2.rds")))
 ```
 
-```{r}
-saveRDS(archs4.plier2, file = file.path(output_nb_path, "archs4_PLIER2.rds"))
-```
