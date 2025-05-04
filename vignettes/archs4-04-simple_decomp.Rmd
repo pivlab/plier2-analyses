@@ -47,11 +47,18 @@ fbm_obj_filtered <- FBM(
 Precompute the SVD
 
 ```{r randomSVD}
+options(bigstatsr.check.parallel.blas = FALSE)
+blas_nproc <- getOption("default.nproc.blas")
+options(default.nproc.blas = NULL)
+
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
   k = config$ARCHS4$PLIER_PARAMS$K,
   ncores = config$GENERAL$N_CORES
 )
+
+options(bigstatsr.check.parallel.blas = TRUE)
+options(default.nproc.blas = blas_nproc)
 ```
 
 Run simpleDecomp as the base model
@@ -72,3 +79,4 @@ decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
 #  fbm_obj.sdres <- readRDS(decomp_file)
 #}
 ```
+
