@@ -13,7 +13,7 @@ source(here("R/utilsNew.R"))
 ```
 
 ```{r load_libraries}
-
+library(hdf5r)
 ```
 
 ```{r paths}
@@ -28,6 +28,15 @@ gene_symbols_thin <- meta$gene_symbols_thin
 gene_lengths <- meta$gene_lengths
 n_genes_thin <- meta$n_genes_thin
 n_samples <- meta$n_samples
+```
+
+```{r read_input_data}
+file_path <- config$ARCHS4$DATASET_FILE
+
+h5           <- H5File$new(file_path, mode = "r")
+sc_samples   <- h5[["/meta/samples/singlecellprobability"]]$read()
+# make sure n_samples matches sc_samples' length
+stopifnot(n_samples == length(sc_samples))
 ```
 
 
@@ -72,10 +81,15 @@ Filter the data. Doing aggressive filtering to reduce the number of genes.
 output_file <- paste0(fbm_file, "_filtered")
 #kept_rows_output_file <- file.path(output_nb_path, "kept_rows.rds")
 
+# remove single cell samples
+samples_idx <- which(sc_samples < 0.5)
+n_samples <- length(samples_idx)
+
 #if (!file.exists(output_file)) {
 filterResult=filterFBM(
 	fbm_obj,
 	rowStats,
+  keep_samples_idx = samples_idx,
 	mean_cutoff = config$ARCHS4$GENES_MEAN_CUTOFF,
 	var_cutoff = config$ARCHS4$GENES_VAR_CUTOFF,
 	backingfile = output_file
@@ -125,6 +139,7 @@ saveRDS(
 
 ```{r}
 message(paste("Number of genes kept: ", length(gene_symbols_thin)))
+message(paste("Number of samples kept: ", n_samples))
 ```
 
 ```{r}

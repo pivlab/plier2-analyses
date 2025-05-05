@@ -208,7 +208,7 @@ zscoreFBM <- function(fbm, rowStats, chunk_size = 1000) {
 
 
 
-filterFBM<- function(fbm, rowStats, mean_cutoff = NULL, var_cutoff = NULL, backingfile = "filtered_fbm") {
+filterFBM<- function(fbm, rowStats, keep_samples_idx=NULL, mean_cutoff = NULL, var_cutoff = NULL, backingfile = "filtered_fbm") {
   row_means <- rowStats$row_means
   row_variances <- rowStats$row_variances
   
@@ -222,6 +222,10 @@ filterFBM<- function(fbm, rowStats, mean_cutoff = NULL, var_cutoff = NULL, backi
   if (!is.null(var_cutoff)) {
     keep_rows <- keep_rows & (row_variances >= var_cutoff)
   }
+
+  if (is.null(keep_samples_idx)) {
+    keep_samples_idx <- cols_along(fbm)
+  }
   
   # Number of rows to keep
   n_kept <- sum(keep_rows)
@@ -234,7 +238,7 @@ filterFBM<- function(fbm, rowStats, mean_cutoff = NULL, var_cutoff = NULL, backi
   fbm_filtered <- big_copy(
     X           = fbm,
     ind.row     = which(keep_rows),
-    #ind.col     = cols_along(fbm),
+    ind.col     = keep_samples_idx,
     backingfile = backingfile
   )
 

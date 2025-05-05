@@ -21,11 +21,11 @@ library(dplyr)
 ```{r paths}
 output_dir <- config$ARCHS4$DATASET_FOLDER
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-
-file_path <- config$ARCHS4$DATASET_FILE
 ```
 
 ```{r read_input_data}
+file_path <- config$ARCHS4$DATASET_FILE
+
 h5        <- H5File$new(file_path, mode = "r")
 dset      <- h5[["/data/expression"]]
 gene_symbols <- h5[["/meta/genes/symbol"]]$read()
