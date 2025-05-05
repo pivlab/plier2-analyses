@@ -51,25 +51,23 @@ decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
 fbm_obj.sdres <- readRDS(decomp_file)
 ```
 
-Download some pathways
+Get pathways
 
 ```{r get_pathways}
-# FIXME: we should download the pathways before and only once, and then load
-# them here
+output_pathways_dir <- file.path(config$GENERAL$OUTPUT_DIR, "pathways")
+
 gmtList=list()
 
-gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
-gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
-gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
-gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
-gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
+gmtList[["Wiki"]]=getGMT(output_pathways_dir, "Wiki")
+gmtList[["MGI"]]=getGMT(output_pathways_dir, "MGI")
+gmtList[["GO"]]=getGMT(output_pathways_dir, "GO")
+gmtList[["Reactome"]]=getGMT(output_pathways_dir, "Reactome")
+gmtList[["CellMarkers"]]=getGMT(output_pathways_dir, "CellMarkers")
 ```
 
 Create a pathMat object and save
 ```{r assemble_path_matrix}
-pathMat = gmtListToSparseMat(gmtList[c(5)])
-#saveRDS(gmtList, "gmtList.RDS")
-#saveRDS(pathMat, "pathMat.RDS")
+pathMat = gmtListToSparseMat(gmtList[c(length(gmtList))])
 ```
 
 Get a matched pathway set

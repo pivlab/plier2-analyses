@@ -2,15 +2,11 @@ library(Matrix)
 library(glmnet)
 library(dplyr)
 library(bigstatsr)
-getGMT <- function(url) {
+getGMT <- function(dirpath, pathway_name) {
   
-  tmp_file <- tempfile(fileext = ".gmt")
-  
-  download.file(url, tmp_file)
+  tmp_file <- file.path(dirpath, paste0(pathway_name, ".gmt"))
   
   result <- read_gmt(tmp_file)
-  
-  unlink(tmp_file)
   
   return(result)
 }
