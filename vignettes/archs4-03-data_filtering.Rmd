@@ -133,7 +133,7 @@ saveRDS(
     n_genes_thin=n_genes_thin,
     n_samples=n_samples
   ),
-  file.path(output_dir, "metadata.rds")
+  file.path(output_dir, "metadata_filtered.rds")
 )
 ```
 
