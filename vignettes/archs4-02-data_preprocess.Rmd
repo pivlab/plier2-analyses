@@ -42,7 +42,6 @@ Get gene lengths for this Ensembl version
 # lengths (using EDASeq, below, was giving an error)
 output_file <- file.path(output_dir, "gene_lengths.rds")
 
-#if (!file.exists(output_file)) {
 ensembl_ver <- config$ARCHS4$DATASET_ENSEMBL_VERSION
 ensembl <- useEnsembl(biomart="ensembl", version=ensembl_ver)
 mart <- biomaRt::useDataset("hsapiens_gene_ensembl", ensembl)
@@ -59,11 +58,9 @@ gene_lengths <- gene_info %>%
   pull(gene_length_bp, name = hgnc_symbol)
 
 saveRDS(gene_lengths, file = output_file)
-#} else {
-#  gene_lengths <- readRDS(output_file)
-#  cat("File already exists. Skipping download.\n")
-#}
 
+# Using EDASeq:
+#
 #if (!file.exists(output_file)) {
 #  gene_lengths <- EDASeq::getGeneLengthAndGCContent(gene_ids, "hsa")
 #  saveRDS(gene_lengths, file = output_file)
@@ -159,13 +156,20 @@ h5$close_all()
 ```
 
 ```{r clean_fbm}
+N_CORES <- config$GENERAL$N_CORES
+if (N_CORES > 1) {
+  # if we are parallelizing, then disable BLAS parallelization
+  options(bigstatsr.check.parallel.blas = FALSE)
+  blas_nproc <- getOption("default.nproc.blas")
+  options(default.nproc.blas = NULL)
+}
+
 # run cleanFBM (log, NAs handling, etc)
-options(bigstatsr.check.parallel.blas = FALSE)
-blas_nproc <- getOption("default.nproc.blas")
-options(default.nproc.blas = NULL)
+cleanFBM(fbm_obj, ncores=N_CORES)
 
-cleanFBM(fbm_obj, ncores=config$GENERAL$N_CORES)
-
-options(bigstatsr.check.parallel.blas = TRUE)
-options(default.nproc.blas = blas_nproc)
+if (N_CORES > 1) {
+  options(bigstatsr.check.parallel.blas = TRUE)
+  options(default.nproc.blas = blas_nproc)
+}
 ```
+

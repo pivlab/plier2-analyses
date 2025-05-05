@@ -49,8 +49,9 @@ Precompute the SVD
 ```{r randomSVD}
 set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
 
-if (config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES > 1) {
-  # if we are parallelizing big_randomSVD, then disable BLAS parallelization
+N_CORES <- config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
+if (N_CORES > 1) {
+  # if we are parallelizing, then disable BLAS parallelization
   options(bigstatsr.check.parallel.blas = FALSE)
   blas_nproc <- getOption("default.nproc.blas")
   options(default.nproc.blas = NULL)
@@ -59,10 +60,10 @@ if (config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES > 1) {
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
   k = config$ARCHS4$PLIER_PARAMS$K,
-  ncores = config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
+  ncores = N_CORES
 )
 
-if (config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES > 1) {
+if (N_CORES > 1) {
   # restore previous state
   options(bigstatsr.check.parallel.blas = TRUE)
   options(default.nproc.blas = blas_nproc)
@@ -74,17 +75,27 @@ Run simpleDecomp as the base model
 ```{r simpleDecomp}
 decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
 
-#if (!file.exists(decomp_file)) {
-  fbm_obj.sdres <- simpleDecomp(
-    fbm_obj_filtered,
-    k = config$ARCHS4$PLIER_PARAMS$K,
-    svdres = fbm_obj.svd,
-    ncores = config$ARCHS4$PLIER_PARAMS$N_CORES
-  )
+N_CORES <- config$ARCHS4$PLIER_PARAMS$N_CORES
+if (N_CORES > 1) {
+  # if we are parallelizing, then disable BLAS parallelization
+  options(bigstatsr.check.parallel.blas = FALSE)
+  blas_nproc <- getOption("default.nproc.blas")
+  options(default.nproc.blas = NULL)
+}
 
-  saveRDS(fbm_obj.sdres, file = decomp_file)
-#} else {
-#  fbm_obj.sdres <- readRDS(decomp_file)
-#}
+fbm_obj.sdres <- simpleDecomp(
+  fbm_obj_filtered,
+  k = config$ARCHS4$PLIER_PARAMS$K,
+  svdres = fbm_obj.svd,
+  ncores = N_CORES
+)
+
+if (N_CORES > 1) {
+  # restore previous state
+  options(bigstatsr.check.parallel.blas = TRUE)
+  options(default.nproc.blas = blas_nproc)
+}
+
+saveRDS(fbm_obj.sdres, file = decomp_file)
 ```
 

@@ -55,37 +55,35 @@ fbm_obj <- FBM(
 Compute gene stats
 
 ```{r get_fbm_stats_and_plot}
-#output_file <- file.path(output_dir, "row_stats.rds")
+N_CORES <- config$GENERAL$N_CORES
+if (N_CORES > 1) {
+  # if we are parallelizing, then disable BLAS parallelization
+  options(bigstatsr.check.parallel.blas = FALSE)
+  blas_nproc <- getOption("default.nproc.blas")
+  options(default.nproc.blas = NULL)
+}
 
-options(bigstatsr.check.parallel.blas = FALSE)
-blas_nproc <- getOption("default.nproc.blas")
-options(default.nproc.blas = NULL)
+rowStats=computeRowStatsFBM(fbm_obj, ncores=N_CORES)
 
-#if (!file.exists(output_file)) {
-  rowStats=computeRowStatsFBM(fbm_obj, ncores=config$GENERAL$N_CORES)
-#  saveRDS(rowStats, file = output_file)
+png(filename=file.path(output_dir, "gene_means_and_vars.png"))
+plot(rowStats$row_means, rowStats$row_variances, log="y")
+dev.off()
 
-  png(filename=file.path(output_dir, "gene_means_and_vars.png"))
-  plot(rowStats$row_means, rowStats$row_variances, log="y")
-  dev.off()
-#} else {
-#  rowStats <- readRDS(output_file)
-#}
-options(bigstatsr.check.parallel.blas = TRUE)
-options(default.nproc.blas = blas_nproc)
+if (N_CORES > 1) {
+  options(bigstatsr.check.parallel.blas = TRUE)
+  options(default.nproc.blas = blas_nproc)
+}
 ```
 
 Filter the data. Doing aggressive filtering to reduce the number of genes.
 
 ```{r filter_fbm}
 output_file <- paste0(fbm_file, "_filtered")
-#kept_rows_output_file <- file.path(output_nb_path, "kept_rows.rds")
 
 # remove single cell samples
 samples_idx <- which(sc_samples < 0.5)
 n_samples <- length(samples_idx)
 
-#if (!file.exists(output_file)) {
 filterResult=filterFBM(
 	fbm_obj,
 	rowStats,
@@ -94,23 +92,6 @@ filterResult=filterFBM(
 	var_cutoff = config$ARCHS4$GENES_VAR_CUTOFF,
 	backingfile = output_file
 )
-
-#  saveRDS(filterResult$kept_rows, kept_rows_output_file)
-
-
-  
-#} else {
-#  filterResult <- list()
-
-#	filterResult$fbm_filtered <- FBM(
-#		nrow        = n_genes_thin,
-#		ncol        = n_samples,
-#		backingfile = fbm_file,
-#		create_bk   = !fbm_file_exists,
-#	)
-
-#  filterResult$kept_rows <- readRDS(kept_rows_output_file)
-#}
 
 fbm_obj_filtered=filterResult$fbm_filtered
 ```
@@ -149,7 +130,6 @@ rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 
 
 ```{r zscore}
-# TODO: add a way to check if this needs to be done
 zscoreFBM(fbm_obj_filtered, rowStats = rowStats, chunk_size=config$GENERAL$CHUNK_SIZE)
 ```
 

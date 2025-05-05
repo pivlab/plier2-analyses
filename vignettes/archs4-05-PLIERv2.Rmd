@@ -83,6 +83,14 @@ Chat=getChat(matchedPaths, method = "fast")
 # Run PLIER2
 
 ```{r run_plier2}
+N_CORES <- config$ARCHS4$PLIER_PARAMS$N_CORES
+if (N_CORES > 1) {
+  # if we are parallelizing, then disable BLAS parallelization
+  options(bigstatsr.check.parallel.blas = FALSE)
+  blas_nproc <- getOption("default.nproc.blas")
+  options(default.nproc.blas = NULL)
+}
+
 fbm_obj.plier2 <- PLIERv2(
   fbm_obj_filtered,
   matchedPaths,
@@ -93,8 +101,15 @@ fbm_obj.plier2 <- PLIERv2(
   max.U.updates = config$ARCHS4$PLIER_PARAMS$MAX_U_UPDATES,
   max.iter = config$ARCHS4$PLIER_PARAMS$MAX_ITER,
   k = config$ARCHS4$PLIER_PARAMS$K,
-  ncores=config$ARCHS4$PLIER_PARAMS$N_CORES
+  ncores=N_CORES
 )
+
+if (N_CORES > 1) {
+  # restore previous state
+  options(bigstatsr.check.parallel.blas = TRUE)
+  options(default.nproc.blas = blas_nproc)
+}
 
 saveRDS(fbm_obj.plier2, file = file.path(output_dir, paste0(config$ARCHS4$DATASET_NAME, "_PLIER2.rds")))
 ```
+

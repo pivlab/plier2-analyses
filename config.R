@@ -4,7 +4,7 @@ library(here)
 config <- list()
 
 config$GENERAL <- list(
-  N_CORES=nb_cores() %/% 4,
+  N_CORES=max(nb_cores() %/% 4, 1),
   CHUNK_SIZE=100,
   DATA_DIR=here(file.path("data")),
   OUTPUT_DIR=here(file.path("output"))
