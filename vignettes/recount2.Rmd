@@ -61,7 +61,7 @@ which was the input for PLIER
 Read preprocessed recount2 data
 
 ```{r}
-data_mat <- readRDS("data/recount2/recount_data_prep_PLIER.RDS")
+data_mat <- readRDS(here("data/recount2/recount_data_prep_PLIER.RDS"))
 
 meta <- list()
 meta$gene_symbols <- rownames(data_mat$rpkm.cm)
@@ -73,7 +73,7 @@ rm(data_mat)
 Read in recount2 file
 
 ```{r}
-rpkm.df <- readRDS("data/recount2/recount_rpkm.RDS")
+rpkm.df <- readRDS(here("data/recount2/recount_rpkm.RDS"))
 
 # Transform ensembl id to genesymbol
 mart <- biomaRt::useDataset("hsapiens_gene_ensembl",

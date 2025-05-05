@@ -5,6 +5,7 @@ library(ggplot2)
 library(purrr)
 library(tibble)
 library(pheatmap)
+library(stringr)
 ```
 
 # Compare both models
@@ -63,12 +64,12 @@ head(shared_pliers)
 ```{r}
 gtex_plier_summary_sub <- gtex_plier_summary_sub %>% 
   dplyr::group_by(LV) %>% 
-  summarise(pathway_plier = paste0(pathway, collapse = ' '), .groups = 'drop') %>% 
+  summarise(pathway_plier = paste0(pathway, collapse = ', '), .groups = 'drop') %>% 
   dplyr::select(LV, pathway_plier)
 
 gtex_plier2_summary_sub <- gtex_plier2_summary_sub %>% 
   dplyr::group_by(LV) %>% 
-  summarise(pathway_plier2 = paste0(pathway, collapse = ' '), .groups = 'drop') %>% 
+  summarise(pathway_plier2 = paste0(pathway, collapse = ', '), .groups = 'drop') %>% 
   dplyr::select(LV, pathway_plier2)
 
 shared_sel_lvs <- inner_join(gtex_plier_summary_sub, gtex_plier2_summary_sub)
@@ -95,7 +96,7 @@ head(gtex_plier2_Z)
 
 ## Pearson Correlation
 
-```{r}
+```{r, fig.width=8, fig.height=20}
 m1 <- as.matrix(gtex_plier_Z)
 m2 <- as.matrix(gtex_plier2_Z)
 
@@ -114,9 +115,73 @@ ggplot(cor_df_pearson, aes(x = LV, y = Pearson_correlation)) +
   coord_flip() +
   labs(title = "PLIER vs PLIER2 Pearson", x = "LV", y = "Pearson Correlation", color = "Correlation") +
   theme_minimal()
+```
 
+```{r, fig.width=12, fig.height=12}
 cors_pearson <- cor(m1, m2, method = "pearson")
-pheatmap(cors_pearson, cluster_rows = FALSE, cluster_cols = FALSE, main = "PLIER1 vs PLIER2 Pearson", fontsize_row = 6, fontsize_col = 6)
+pheatmap(cors_pearson, cluster_rows = FALSE, cluster_cols = FALSE, main = "PLIER1 vs PLIER2 Pearson", fontsize_row = 4, fontsize_col = 4)
+```
+
+```{r}
+mean(cor_df_pearson$Pearson_correlation)
+```
+
+```{r}
+max_corrs <- apply(cors_pearson, 1, function(x) {
+  best_idx <- which.max(x)
+  c(target_LV = names(x)[best_idx], correlation = x[best_idx])
+})
+
+max_corrs_df <- as.data.frame(t(max_corrs), stringsAsFactors = FALSE)
+
+max_corrs_df$LV_PLIER <- rownames(max_corrs_df)
+rownames(max_corrs_df) <- 1:nrow(max_corrs_df)
+colnames(max_corrs_df) <- c('LV_PLIER2', 'correlation', 'LV_PLIER')
+
+max_corrs_df$correlation <- as.numeric(max_corrs_df$correlation)
+max_corrs_df$LV <- rownames(max_corrs_df)
+
+max_corrs_df <-  max_corrs_df[c('LV_PLIER', 'LV_PLIER2', 'correlation')]
+
+gtex_plier_summary_mod <- gtex_plier_summary_sub %>% 
+  dplyr::mutate(LV = paste0('LV', LV)) %>% 
+  dplyr::rename(LV_PLIER = LV) %>% 
+  dplyr::rename(pathway_PLIER = pathway_plier) %>% 
+  data.frame()
+
+gtex_plier2_summary_mod <- gtex_plier2_summary_sub %>% 
+  dplyr::mutate(LV = paste0('LV', LV)) %>% 
+  dplyr::rename(LV_PLIER2 = LV) %>% 
+  dplyr::rename(pathway_PLIER2 = pathway_plier2) %>% 
+  data.frame()
+
+corr_plier_plier2 <- dplyr::left_join(max_corrs_df, gtex_plier_summary_mod)
+corr_plier_plier2 <- dplyr::left_join(corr_plier_plier2, gtex_plier2_summary_mod)
+
+message(paste('Total LVs duplicated', length(max_corrs_df$LV_PLIER2[duplicated(max_corrs_df$LV_PLIER2)])))
+head(corr_plier_plier2)
+message('Mean corr top Pearson', mean(corr_plier_plier2$correlation))
+```
+
+```{r}
+compare_pathways <- function(p1, p2) {
+  if (is.na(p1) || is.na(p2)) return(NA)
+  s1 <- str_trim(unlist(strsplit(p1, ",")))
+  s2 <- str_trim(unlist(strsplit(p2, ",")))
+  intersect_len <- length(intersect(s1, s2))
+  union_len <- length(union(s1, s2))
+  if (union_len == 0) return(0)
+  return(intersect_len / union_len)
+}
+
+corr_plier_plier2 <- corr_plier_plier2 %>%
+  rowwise() %>%
+  mutate(pathway_similarity = compare_pathways(pathway_PLIER, pathway_PLIER2)) %>%
+  ungroup()
+
+head(corr_plier_plier2)
+
+mean(na.omit(corr_plier_plier2$pathway_similarity))
 ```
 
 ## Spearman Correlation
