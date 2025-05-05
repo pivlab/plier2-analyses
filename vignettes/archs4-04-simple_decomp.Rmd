@@ -51,6 +51,8 @@ options(bigstatsr.check.parallel.blas = FALSE)
 blas_nproc <- getOption("default.nproc.blas")
 options(default.nproc.blas = NULL)
 
+set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
+
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
   k = config$ARCHS4$PLIER_PARAMS$K,
