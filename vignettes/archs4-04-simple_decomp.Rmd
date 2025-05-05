@@ -47,20 +47,26 @@ fbm_obj_filtered <- FBM(
 Precompute the SVD
 
 ```{r randomSVD}
-options(bigstatsr.check.parallel.blas = FALSE)
-blas_nproc <- getOption("default.nproc.blas")
-options(default.nproc.blas = NULL)
-
 set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
+
+if (config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES > 1) {
+  # if we are parallelizing big_randomSVD, then disable BLAS parallelization
+  options(bigstatsr.check.parallel.blas = FALSE)
+  blas_nproc <- getOption("default.nproc.blas")
+  options(default.nproc.blas = NULL)
+}
 
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
   k = config$ARCHS4$PLIER_PARAMS$K,
-  ncores = config$GENERAL$N_CORES
+  ncores = config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
 )
 
-options(bigstatsr.check.parallel.blas = TRUE)
-options(default.nproc.blas = blas_nproc)
+if (config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES > 1) {
+  # restore previous state
+  options(bigstatsr.check.parallel.blas = TRUE)
+  options(default.nproc.blas = blas_nproc)
+}
 ```
 
 Run simpleDecomp as the base model
