@@ -12,12 +12,16 @@ source(here("config.R"))
 ```
 
 ```{r paths}
-output_dir <- dirname(config$ARCHS4$DATASET_FILE)
-dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+output_data_dir <- dirname(config$ARCHS4$DATASET_FILE)
+dir.create(output_data_dir, showWarnings = FALSE, recursive = TRUE)
+
+output_pathways_dir <- file.path(config$GENERAL$OUTPUT_DIR, "pathways")
+dir.create(output_pathways_dir, showWarnings = FALSE, recursive = TRUE)
 ```
 
-```{r download_archs4_if_needed, eval = TRUE, echo = TRUE, message = TRUE}
+```{r download_archs4, echo = TRUE, message = TRUE}
 if (!file.exists(config$ARCHS4$DATASET_FILE)) {
+  # FIXME: replace by "download.file"? see example below; wget is not available in every system
   command <- sprintf("wget -c '%s' -O '%s'", config$ARCHS4$URL, config$ARCHS4$DATASET_FILE)
   tryCatch({
     system(command)
@@ -29,3 +33,27 @@ if (!file.exists(config$ARCHS4$DATASET_FILE)) {
   cat("File already exists. Skipping download.\n")
 }
 ```
+
+```{r download_pathways, echo = TRUE, message = TRUE}
+pathways_list <- list()
+
+pathways_list[["Wiki"]]="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human"
+pathways_list[["MGI"]]="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021"
+pathways_list[["GO"]]="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023"
+pathways_list[["Reactome"]]="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022"
+pathways_list[["CellMarkers"]]="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024"
+
+outdir <- output_pathways_dir
+
+for (nm in names(pathways_list)) {
+  url      <- pathways_list[[nm]]
+  destfile <- file.path(outdir, paste0(nm, ".gmt"))
+  tryCatch({
+    download.file(url, destfile, mode = "wb")
+    message("downloaded ", nm)
+  }, error = function(e) {
+    warning("failed to download ", nm, ": ", conditionMessage(e))
+  })
+}
+```
+
