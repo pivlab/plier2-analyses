@@ -54,7 +54,7 @@ fbm_obj.sdres <- readRDS(decomp_file)
 Get pathways
 
 ```{r get_pathways}
-output_pathways_dir <- file.path(config$GENERAL$OUTPUT_DIR, "pathways")
+output_pathways_dir <- file.path(config$GENERAL$DATA_DIR, "pathways")
 
 gmtList=list()
 

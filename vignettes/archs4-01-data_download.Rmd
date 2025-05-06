@@ -15,7 +15,7 @@ source(here("config.R"))
 output_data_dir <- dirname(config$ARCHS4$DATASET_FILE)
 dir.create(output_data_dir, showWarnings = FALSE, recursive = TRUE)
 
-output_pathways_dir <- file.path(config$GENERAL$OUTPUT_DIR, "pathways")
+output_pathways_dir <- file.path(config$GENERAL$DATA_DIR, "pathways")
 dir.create(output_pathways_dir, showWarnings = FALSE, recursive = TRUE)
 ```
 
