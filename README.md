@@ -29,7 +29,27 @@ To render any of these RMarkdown files from the command line:
 ```bash
 Rscript -e "rmarkdown::render('vignettes/gtex.Rmd')"
 Rscript -e "rmarkdown::render('vignettes/gtex_comparisons.Rmd')"
-Rscript -e "rmarkdown::render('vignettes/archs4.Rmd')"
+```
+
+### ARCHS4
+
+If you want to control paralellization of OpenBLAS, run this before Rscript:
+
+```bash
+n_jobs=30
+export NUMBA_NUM_THREADS=$n_jobs
+export MKL_NUM_THREADS=$n_jobs
+export OPENBLAS_NUM_THREADS=$n_jobs
+export NUMEXPR_NUM_THREADS=$n_jobs
+export OMP_NUM_THREADS=$n_jobs
+```
+
+```bash
+Rscript -e "rmarkdown::render('vignettes/archs4-01-data_download.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-02-data_preprocess.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-03-data_filtering.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-04-simple_decomp.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-05-PLIERv2.Rmd')"
 ```
 
 ## 📂 Input Data
