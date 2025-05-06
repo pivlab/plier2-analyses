@@ -4,7 +4,7 @@ library(here)
 config <- list()
 
 config$GENERAL <- list(
-  N_CORES=max(nb_cores() %/% 4, 1),
+  N_CORES=10, #max(nb_cores() %/% 4, 1),
   CHUNK_SIZE=100,
   DATA_DIR=here(file.path("data")),
   OUTPUT_DIR=here(file.path("output"))
@@ -21,7 +21,7 @@ config$ARCHS4=list(
   GENES_MEAN_CUTOFF=0.5,
   GENES_VAR_CUTOFF=0.1,
   PLIER_PARAMS=list(
-    RANDOM_SVD_N_CORES=1,
+    RANDOM_SVD_N_CORES=6,
     RANDOM_SVD_SEED=123,
     K=942,
     MULTIPLIER=3,
