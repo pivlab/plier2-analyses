@@ -23,7 +23,7 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load_metadata}
 meta <- readRDS(file.path(output_dir, "metadata.rds"))
-gene_symbols_idx <- meta$gene_symbols_idx
+#gene_symbols_idx <- meta$gene_symbols_idx
 gene_symbols_thin <- meta$gene_symbols_thin
 gene_lengths <- meta$gene_lengths
 n_genes_thin <- meta$n_genes_thin
@@ -108,7 +108,7 @@ n_genes_thin <- length(gene_symbols_thin)
 # save
 saveRDS(
   list(
-    gene_symbols_idx=gene_symbols_idx,
+#    gene_symbols_idx=gene_symbols_idx,
     gene_symbols_thin=gene_symbols_thin,
     gene_lengths=gene_lengths,
     n_genes_thin=n_genes_thin,
