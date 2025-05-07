@@ -9,7 +9,7 @@ source(here("config.R"))
 ```
 
 ```{r load_functions}
-source(here("R/solvers.R"))
+#source(here("R/solvers.R"))
 source(here("R/utilsNew.R"))
 ```
 
@@ -25,8 +25,8 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 ```{r}
 meta <- readRDS(file.path(output_dir, "metadata_filtered.rds"))
 #gene_symbols_idx <- meta$gene_symbols_idx
-gene_symbols_thin <- meta$gene_symbols_thin
-gene_lengths <- meta$gene_lengths
+#gene_symbols_thin <- meta$gene_symbols_thin
+#gene_lengths <- meta$gene_lengths
 n_genes_thin <- meta$n_genes_thin
 n_samples <- meta$n_samples
 ```
@@ -48,6 +48,7 @@ Precompute the SVD
 
 ```{r randomSVD}
 set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
+output_file <- file.path(output_dir, "svd.rds")
 
 N_CORES <- config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
 if (N_CORES > 1) {
@@ -68,34 +69,7 @@ if (N_CORES > 1) {
   options(bigstatsr.check.parallel.blas = TRUE)
   options(default.nproc.blas = blas_nproc)
 }
-```
 
-Run simpleDecomp as the base model
-
-```{r simpleDecomp}
-decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
-
-N_CORES <- config$ARCHS4$PLIER_PARAMS$N_CORES
-if (N_CORES > 1) {
-  # if we are parallelizing, then disable BLAS parallelization
-  options(bigstatsr.check.parallel.blas = FALSE)
-  blas_nproc <- getOption("default.nproc.blas")
-  options(default.nproc.blas = NULL)
-}
-
-fbm_obj.sdres <- simpleDecomp(
-  fbm_obj_filtered,
-  k = config$ARCHS4$PLIER_PARAMS$K,
-  svdres = fbm_obj.svd,
-  ncores = N_CORES
-)
-
-if (N_CORES > 1) {
-  # restore previous state
-  options(bigstatsr.check.parallel.blas = TRUE)
-  options(default.nproc.blas = blas_nproc)
-}
-
-saveRDS(fbm_obj.sdres, file = decomp_file)
+saveRDS(fbm_obj.svd, file = output_file)
 ```
 
