@@ -48,8 +48,9 @@ export OMP_NUM_THREADS=$n_jobs
 Rscript -e "rmarkdown::render('vignettes/archs4-01-data_download.Rmd')"
 Rscript -e "rmarkdown::render('vignettes/archs4-02-data_preprocess.Rmd')"
 Rscript -e "rmarkdown::render('vignettes/archs4-03-data_filtering.Rmd')"
-Rscript -e "rmarkdown::render('vignettes/archs4-04-simple_decomp.Rmd')"
-Rscript -e "rmarkdown::render('vignettes/archs4-05-PLIERv2.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-04-svd.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-05-simple_decomp.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-06-PLIERv2.Rmd')"
 ```
 
 ## 📂 Input Data
