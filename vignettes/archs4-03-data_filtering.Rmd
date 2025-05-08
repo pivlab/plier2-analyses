@@ -96,7 +96,7 @@ filterResult=filterFBM(
 fbm_obj_filtered=filterResult$fbm_filtered
 ```
 
-```{r}
+```{r report}
 message(paste("New filtered dataset dims: ", nrow(fbm_obj_filtered), " x ", ncol(fbm_obj_filtered)))
 ```
 
@@ -118,12 +118,12 @@ saveRDS(
 )
 ```
 
-```{r}
+```{r report}
 message(paste("Number of genes kept: ", length(gene_symbols_thin)))
 message(paste("Number of samples kept: ", n_samples))
 ```
 
-```{r}
+```{r rowStats_filtering}
 rowStats$row_means=rowStats$row_means[filterResult$kept_rows]
 rowStats$row_variances=rowStats$row_variances[filterResult$kept_rows]
 ```
