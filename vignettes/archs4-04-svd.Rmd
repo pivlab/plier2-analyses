@@ -44,6 +44,13 @@ fbm_obj_filtered <- FBM(
 )
 ```
 
+K for SVD
+
+```{r}
+SVD_K <- min(n_genes_thin, n_samples) - 1
+message(SVD_K)
+```
+
 Precompute the SVD
 
 ```{r randomSVD}
@@ -60,7 +67,7 @@ if (N_CORES > 1) {
 
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
-  k = config$ARCHS4$PLIER_PARAMS$K,
+  k = SVD_K,
   ncores = N_CORES
 )
 
@@ -71,5 +78,13 @@ if (N_CORES > 1) {
 }
 
 saveRDS(fbm_obj.svd, file = output_file)
+```
+
+Infer K from SVD using elbow method
+
+```{r infer_k, echo=TRUE}
+PLIER_K <- num.pc(fbm_obj.svd) * 2
+
+message(paste0("K inferred for PLIER: ", PLIER_K))
 ```
 

@@ -50,6 +50,17 @@ Load the SVD
 fbm_obj.svd <- readRDS(file.path(output_dir, "svd.rds"))
 ```
 
+Infer K from SVD using elbow method
+
+```{r infer_k, echo=TRUE}
+PLIER_K <- num.pc(fbm_obj.svd) * 2
+
+message(paste0("K inferred for PLIER: ", PLIER_K))
+
+saveRDS(list(PLIER_K=PLIER_K), file.path(output_dir, "plier_k.rds"))
+```
+
+
 Run simpleDecomp as the base model
 
 ```{r simpleDecomp}
@@ -65,7 +76,7 @@ if (N_CORES > 1) {
 
 fbm_obj.sdres <- simpleDecomp(
   fbm_obj_filtered,
-  k = config$ARCHS4$PLIER_PARAMS$K,
+  k = PLIER_K,
   svdres = fbm_obj.svd,
   ncores = N_CORES
 )
