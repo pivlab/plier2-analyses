@@ -26,7 +26,7 @@ library(PLIER)
 Output 
 
 ```{r}
-output_nb_path <- here("output/vignettes/plier2_testing/gtex")
+output_nb_path <- here("output/gtex")
 dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
 ```
 
@@ -156,6 +156,7 @@ Precompute the SVD
 ```{r}
 k = 200
 gtexFBM.svd=big_randomSVD(gtexFBMfiltered, k = k)
+save(gtexFBM.svd, file.path(output_nb_path, "svd.rds"))
 ```
 
 Run simpleDecomp as the base model 
