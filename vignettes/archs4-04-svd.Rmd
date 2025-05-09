@@ -9,7 +9,7 @@ source(here("config.R"))
 ```
 
 ```{r load_functions}
-#source(here("R/solvers.R"))
+source(here("R/solvers.R"))
 source(here("R/utilsNew.R"))
 ```
 
@@ -55,7 +55,7 @@ Precompute the SVD
 
 ```{r randomSVD}
 set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
-output_file <- file.path(output_dir, "svd.rds")
+output_file <- file.path(output_dir, "svd_full.rds")
 
 N_CORES <- config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
 if (N_CORES > 1) {
@@ -80,10 +80,23 @@ if (N_CORES > 1) {
 saveRDS(fbm_obj.svd, file = output_file)
 ```
 
+```{r remove_nan, echo=TRUE}
+# remove NaN values (if present)
+output_file <- file.path(output_dir, "svd.rds")
+
+valid_idx <- which(!is.nan(fbm_obj.svd$d))
+fbm_obj.svd$d <- fbm_obj.svd$d[valid_idx]
+fbm_obj.svd$u <- fbm_obj.svd$u[, valid_idx, drop = FALSE]
+fbm_obj.svd$v <- fbm_obj.svd$v[, valid_idx, drop = FALSE]
+
+saveRDS(fbm_obj.svd, file = output_file)
+```
+
 Infer K from SVD using elbow method
 
 ```{r infer_k, echo=TRUE}
-PLIER_K <- num.pc(fbm_obj.svd) * 2
+svd_list <- list(d=fbm_obj.svd$d)
+PLIER_K <- num.pc(svd_list) * 2
 
 message(paste0("K inferred for PLIER: ", PLIER_K))
 ```
