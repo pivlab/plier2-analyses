@@ -53,13 +53,13 @@ fbm_obj.svd <- readRDS(file.path(output_dir, "svd.rds"))
 Infer K from SVD using elbow method
 
 ```{r infer_k, echo=TRUE}
-PLIER_K <- num.pc(fbm_obj.svd) * 2
+svd_list <- list(d=fbm_obj.svd$d)
+PLIER_K <- num.pc(svd_list) * 2
 
 message(paste0("K inferred for PLIER: ", PLIER_K))
 
 saveRDS(list(PLIER_K=PLIER_K), file.path(output_dir, "plier_k.rds"))
 ```
-
 
 Run simpleDecomp as the base model
 

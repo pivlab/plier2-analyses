@@ -3,7 +3,7 @@
 #SBATCH --job-name=sdec
 #SBATCH --output=sdec.%j.log
 #SBATCH --error=sdec.%j.err
-#SBATCH --time=86:00:00
+#SBATCH --time=120:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=30
 #SBATCH --mem=200GB
