@@ -6,7 +6,7 @@
 #SBATCH --time=120:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=30
-#SBATCH --mem=200GB
+#SBATCH --mem=500GB
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=milton.pividori@cuanschutz.edu
 
