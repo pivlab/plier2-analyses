@@ -6,6 +6,7 @@ library(purrr)
 library(tibble)
 library(pheatmap)
 library(stringr)
+library(tidyr)
 ```
 
 # Compare both models
@@ -14,7 +15,8 @@ library(stringr)
 
 ```{r}
 gtex_plier <- readRDS(here('output/vignettes/plier2_testing/gtex/gtex_PLIER.rds'))
-gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex/gtex_PLIER2.rds'))
+#gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex/gtex_PLIER2.rds'))
+gtex_plier2 <- readRDS(here('output/vignettes/plier2_testing/gtex/params/gtex_PLIER2_mult3_maxU10.rds'))
 ```
 
 ## L
@@ -157,13 +159,16 @@ gtex_plier2_summary_mod <- gtex_plier2_summary_sub %>%
 
 corr_plier_plier2 <- dplyr::left_join(max_corrs_df, gtex_plier_summary_mod)
 corr_plier_plier2 <- dplyr::left_join(corr_plier_plier2, gtex_plier2_summary_mod)
+corr_plier_plier2 <- corr_plier_plier2 %>%
+  mutate(across(where(is.character), ~replace_na(., "pathway")))
 
 message(paste('Total LVs duplicated', length(max_corrs_df$LV_PLIER2[duplicated(max_corrs_df$LV_PLIER2)])))
 head(corr_plier_plier2)
-message('Mean corr top Pearson', mean(corr_plier_plier2$correlation))
+message('Mean corr top Pearson ', mean(corr_plier_plier2$correlation))
 ```
 
 ```{r}
+library(stringr)
 compare_pathways <- function(p1, p2) {
   if (is.na(p1) || is.na(p2)) return(NA)
   s1 <- str_trim(unlist(strsplit(p1, ",")))

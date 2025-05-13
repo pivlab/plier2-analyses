@@ -50,11 +50,51 @@ k = 200
 
 gmtList=list()
 
-gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
-gmtList[["MGI"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021")
-gmtList[["GO"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023")
-gmtList[["Reactome"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022")
-gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024")
+gmt_dir <- here("output/vignettes/plier2_testing/pathways")
+dir.create(gmt_dir, recursive = TRUE, showWarnings = FALSE)
+
+if (!file.exists(file.path(gmt_dir, "WikiPathway_2021_Human.gmt"))) {
+  download.file(
+    "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human",
+    file.path(gmt_dir, "WikiPathway_2021_Human.gmt"),
+    method = "wget", quiet = TRUE
+  )
+}
+if (!file.exists(file.path(gmt_dir, "MGI_Mammalian_Phenotype_Level_4_2021.gmt"))) {
+  download.file(
+    "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021",
+    file.path(gmt_dir, "MGI_Mammalian_Phenotype_Level_4_2021.gmt"),
+    method = "wget", quiet = TRUE
+  )
+}
+if (!file.exists(file.path(gmt_dir, "GO_Biological_Process_2023.gmt"))) {
+  download.file(
+    "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023",
+    file.path(gmt_dir, "GO_Biological_Process_2023.gmt"),
+    method = "wget", quiet = TRUE
+  )
+}
+if (!file.exists(file.path(gmt_dir, "Reactome_2022.gmt"))) {
+  download.file(
+    "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022",
+    file.path(gmt_dir, "Reactome_2022.gmt"),
+    method = "wget", quiet = TRUE
+  )
+}
+if (!file.exists(file.path(gmt_dir, "CellMarker_2024.gmt"))) {
+  download.file(
+    "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024",
+    file.path(gmt_dir, "CellMarker_2024.gmt"),
+    method = "wget", quiet = TRUE
+  )
+}
+
+gmtList <- list()
+gmtList[["Wiki"]]        <- getGMT(gmt_dir, "WikiPathway_2021_Human")
+gmtList[["MGI"]]         <- getGMT(gmt_dir, "MGI_Mammalian_Phenotype_Level_4_2021")
+gmtList[["GO"]]          <- getGMT(gmt_dir, "GO_Biological_Process_2023")
+gmtList[["Reactome"]]    <- getGMT(gmt_dir, "Reactome_2022")
+gmtList[["CellMarkers"]] <- getGMT(gmt_dir, "CellMarker_2024")
 
 pathMat = gmtListToSparseMat(gmtList[c(5)])
 
@@ -63,8 +103,8 @@ Chat=getChat(matchedPaths, method = "fast")
 
 # Define parameter grid
 param_grid <- expand.grid(
-  multiplier = c(5, 10, 15),
-  max_U_updates = c(5, 10, 15)
+  multiplier = c(3),
+  max_U_updates = c(19, 100)
 )
 
 # Run PLIER2 across all combinations
