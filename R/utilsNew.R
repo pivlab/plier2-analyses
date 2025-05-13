@@ -266,18 +266,6 @@ randomProjection <- function(input_matrix, rd, verbose = TRUE, pos=F) {
   }
 }
 
-cpm_norm <- function(m) {
-  # total counts per sample
-  lib_sizes <- rowSums(m)
-  # scaling factors in millions of reads
-  sf <- lib_sizes / 1e6
-  # divide each row by its scaling factor
-  normalized <- m / sf
-  rownames(normalized) <- rownames(m)
-  colnames(normalized) <- colnames(m)
-  return(normalized)
-}
-
 tpm_norm <- function(counts, gene.lengths) {
   if (!is.matrix(counts)) {
     stop("`counts` must be a matrix.")
