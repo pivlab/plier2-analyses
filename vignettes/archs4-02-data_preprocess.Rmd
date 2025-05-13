@@ -57,7 +57,7 @@ gene_lengths <- gene_info %>%
   summarize(gene_length_bp = max(transcript_length, na.rm = TRUE)) %>%
   pull(gene_length_bp, name = hgnc_symbol)
 
-saveRDS(gene_lengths, file = output_file)
+#saveRDS(gene_lengths, file = output_file)
 
 # Using EDASeq:
 #
@@ -74,15 +74,24 @@ Since we don't get gene lengths (needed for TPM normalization) for every input g
 
 ```{r adjust_gene_symbols}
 # keep in data only genes for which we have lengths
+# here gene symbols are duplicated (we'll use that later)
 gene_symbols_idx <- which( gene_symbols %in% names(gene_lengths) )
 gene_symbols_thin <- gene_symbols[gene_symbols_idx]
-gene_lengths <- gene_lengths[gene_symbols_thin]
-n_genes_thin <- length(gene_symbols_thin)
+
+# get unique gene symbols
+# since we are gonna use rowsum to aggregate same gene symbols, I use it here
+# to get a list of unique and fixed gene symbols
+summed <- rowsum(t(dset[1:10, gene_symbols_idx]), group = gene_symbols_thin)
+gene_symbols_thin_unique <- rownames(summed)
+stopifnot(length(gene_symbols_thin_unique) == length(unique(gene_symbols_thin)))
+gene_lengths <- gene_lengths[gene_symbols_thin_unique]
+n_genes_thin <- length(gene_symbols_thin_unique)
+rm(summed)
 
 saveRDS(
   list(
-    gene_symbols_idx=gene_symbols_idx,
-    gene_symbols_thin=gene_symbols_thin,
+#    gene_symbols_idx=gene_symbols_idx,
+    gene_symbols_thin=gene_symbols_thin_unique,
     gene_lengths=gene_lengths,
     n_genes_thin=n_genes_thin,
     n_samples=n_samples
@@ -125,7 +134,6 @@ for (i in 1:n_blocks) {
   start_row <- (i-1) * block_size + 1
   end_row <- min(i * block_size, n_samples)
 
-  # tpm
   raw_block <- NULL
   tryCatch(
     expr = {
@@ -142,7 +150,16 @@ for (i in 1:n_blocks) {
     raw_block <- matrix(1e-10, (end_row - start_row + 1), n_genes)
   }
 
+  # subset genes to those with gene length only
   raw_block <- raw_block[, gene_symbols_idx]
+
+  # aggregate duplicated gene symbols
+  raw_block_t <- t(raw_block)
+  raw_block_summed <- rowsum(raw_block_t, group = gene_symbols_thin)
+  raw_block <- t(raw_block_summed)
+  rownames(raw_block) <- NULL
+
+  # tpm normalize
   raw_block <- t(tpm_norm(raw_block, gene_lengths))
 
   fbm_obj[, start_row:end_row] <- as.matrix(raw_block)

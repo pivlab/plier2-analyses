@@ -22,17 +22,17 @@ output_dir <- config$ARCHS4$DATASET_FOLDER
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 ```
 
-```{r}
+```{r load_meta}
 meta <- readRDS(file.path(output_dir, "metadata_filtered.rds"))
-gene_symbols_idx <- meta$gene_symbols_idx
-gene_symbols_thin <- meta$gene_symbols_thin
-gene_lengths <- meta$gene_lengths
+#gene_symbols_idx <- meta$gene_symbols_idx
+#gene_symbols_thin <- meta$gene_symbols_thin
+#gene_lengths <- meta$gene_lengths
 n_genes_thin <- meta$n_genes_thin
 n_samples <- meta$n_samples
 ```
 
 
-```{r}
+```{r open_fbm_file}
 fbm_file  <- file.path(output_dir, "fbm")
 output_file <- paste0(fbm_file, "_filtered")
 
@@ -44,10 +44,18 @@ fbm_obj_filtered <- FBM(
 )
 ```
 
+K for SVD
+
+```{r k, echo=TRUE}
+SVD_K <- min(n_genes_thin, n_samples) - 1
+message(SVD_K)
+```
+
 Precompute the SVD
 
 ```{r randomSVD}
 set.seed(config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_SEED)
+output_file <- file.path(output_dir, "svd_full.rds")
 
 N_CORES <- config$ARCHS4$PLIER_PARAMS$RANDOM_SVD_N_CORES
 if (N_CORES > 1) {
@@ -59,7 +67,7 @@ if (N_CORES > 1) {
 
 fbm_obj.svd=big_randomSVD(
   fbm_obj_filtered,
-  k = config$ARCHS4$PLIER_PARAMS$K,
+  k = SVD_K,
   ncores = N_CORES
 )
 
@@ -68,34 +76,28 @@ if (N_CORES > 1) {
   options(bigstatsr.check.parallel.blas = TRUE)
   options(default.nproc.blas = blas_nproc)
 }
+
+saveRDS(fbm_obj.svd, file = output_file)
 ```
 
-Run simpleDecomp as the base model
+```{r remove_nan, echo=TRUE}
+# remove NaN values (if present)
+output_file <- file.path(output_dir, "svd.rds")
 
-```{r simpleDecomp}
-decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
+valid_idx <- which(!is.nan(fbm_obj.svd$d))
+fbm_obj.svd$d <- fbm_obj.svd$d[valid_idx]
+fbm_obj.svd$u <- fbm_obj.svd$u[, valid_idx, drop = FALSE]
+fbm_obj.svd$v <- fbm_obj.svd$v[, valid_idx, drop = FALSE]
 
-N_CORES <- config$ARCHS4$PLIER_PARAMS$N_CORES
-if (N_CORES > 1) {
-  # if we are parallelizing, then disable BLAS parallelization
-  options(bigstatsr.check.parallel.blas = FALSE)
-  blas_nproc <- getOption("default.nproc.blas")
-  options(default.nproc.blas = NULL)
-}
+saveRDS(fbm_obj.svd, file = output_file)
+```
 
-fbm_obj.sdres <- simpleDecomp(
-  fbm_obj_filtered,
-  k = config$ARCHS4$PLIER_PARAMS$K,
-  svdres = fbm_obj.svd,
-  ncores = N_CORES
-)
+Infer K from SVD using elbow method
 
-if (N_CORES > 1) {
-  # restore previous state
-  options(bigstatsr.check.parallel.blas = TRUE)
-  options(default.nproc.blas = blas_nproc)
-}
+```{r infer_k, echo=TRUE}
+svd_list <- list(d=fbm_obj.svd$d)
+PLIER_K <- num.pc(svd_list) * 2
 
-saveRDS(fbm_obj.sdres, file = decomp_file)
+message(paste0("K inferred for PLIER: ", PLIER_K))
 ```
 

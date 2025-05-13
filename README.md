@@ -1,4 +1,4 @@
-# PLIER2
+# PLIER2 <img src="man/figures/plier2.png" width="121px" height="140px" align="right" style="padding-left:10px;background-color:white;" />
 
 **PLIER2 (Pathway-Level Information ExtractoR 2)** is a scalable framework for extracting biologically meaningful latent variables from gene expression data using prior knowledge of gene sets. It builds upon and extends the original [PLIER](https://github.com/wgmao/PLIER) method, offering improvements in performance and reproducibility for large-scale datasets like GTEx and ARCHS4.
 
@@ -29,7 +29,28 @@ To render any of these RMarkdown files from the command line:
 ```bash
 Rscript -e "rmarkdown::render('vignettes/gtex.Rmd')"
 Rscript -e "rmarkdown::render('vignettes/gtex_comparisons.Rmd')"
-Rscript -e "rmarkdown::render('vignettes/archs4.Rmd')"
+```
+
+### ARCHS4
+
+If you want to control paralellization of OpenBLAS, run this before Rscript:
+
+```bash
+n_jobs=30
+export NUMBA_NUM_THREADS=$n_jobs
+export MKL_NUM_THREADS=$n_jobs
+export OPENBLAS_NUM_THREADS=$n_jobs
+export NUMEXPR_NUM_THREADS=$n_jobs
+export OMP_NUM_THREADS=$n_jobs
+```
+
+```bash
+Rscript -e "rmarkdown::render('vignettes/archs4-01-data_download.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-02-data_preprocess.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-03-data_filtering.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-04-svd.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-05-simple_decomp.Rmd')"
+Rscript -e "rmarkdown::render('vignettes/archs4-06-PLIERv2.Rmd')"
 ```
 
 ## 📂 Input Data
