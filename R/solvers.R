@@ -1,10 +1,10 @@
 
 
-mat_mult <- function(mat1, mat2) {
+mat_mult <- function(mat1, mat2, ncores=1) {
   is_fbm <- inherits(mat1, "FBM") 
   if (is_fbm ) {
     # For FBM objects, use the specific multiplication method
-    return(big_prodMat(mat1, as.matrix(mat2)))
+    return(big_prodMat(mat1, as.matrix(mat2), ncores=ncores))
   } else {
     # Regular matrix multiplication
     return(mat1 %*% mat2)
@@ -152,7 +152,7 @@ getAUCstats=function(summary){
 
 getMatchedPathwayMat=function(pathMat, new.genes, min.genes=10){
   cm=intersect(rownames(pathMat), new.genes)
-  mymessage("there are ", length(cm), " genes in the intersction between data and prior")
+  message("there are ", length(cm), " genes in the intersction between data and prior")
   matchPathMat=Matrix(0, nrow=length(new.genes), ncol=ncol(pathMat), sparse=T)
   rownames(matchPathMat)=new.genes
   colnames(matchPathMat)=colnames(pathMat)
@@ -277,7 +277,7 @@ getBestIndex=function(gres, se=F){
 
 simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
                       Zpos=T,max.iter=200, tol=5e-6, trace=F,
-                      rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0){
+                      rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0, ncores=1){
   
   
   #message("Checking type")
@@ -377,7 +377,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   for ( i in 1:max.iter){
     setTxtProgressBar(pb, i) # Avoid exceeding 100
     #main loop    
-    Zraw=Z=mat_mult(Y,t(B))%*%solve(tcrossprod(B)+L1*diag(k))
+    Zraw=Z=mat_mult(Y,t(B), ncores=ncores)%*%solve(tcrossprod(B)+L1*diag(k))
     
     if(i>=adaptive.iter && adaptive.frac>0){
       
@@ -397,12 +397,12 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     
     
     if(is_fbm){
-    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
     ZY=t(ZYt)
     B=solve(t(Z)%*%Z+L2k)%*%ZY
     }
     else{
-    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
     }
     
     #update error
@@ -452,7 +452,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
 
 
 
-PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=5, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=1e-6, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("complete", "fast"), multiplier=1, adaptive.frac=0){
+PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=5, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=1e-6, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("complete", "fast"), multiplier=1, adaptive.frac=0, ncores=1){
   
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
   
@@ -620,12 +620,12 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   L2k=L2*diag(k)
   
   if(is_fbm){
-    ZYt=big_cprodMat(Y, as.matrix(Z))
+    ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
     ZY=t(ZYt)
     B=solve(t(Z)%*%Z+L2k)%*%ZY
   }
   else{
-    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
   }
   
   for ( iter in 1:max.iter){
@@ -654,7 +654,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       
       curfrac=(npos<-sum(apply(U,2,max)>0))/k
       #Z1=Y%*%t(B)
-      Z1=mat_mult(Y, t(B))
+      Z1=mat_mult(Y, t(B), ncores=ncores)
       ratio=median((Z2/Z1)[Z2>0&Z1>0])
       Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
       
@@ -663,7 +663,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     
     else{
       
-      Z=mat_mult(Y,t(B))%*%solve(tcrossprod(B)+L1k)
+      Z=mat_mult(Y,t(B),ncores=ncores)%*%solve(tcrossprod(B)+L1k)
     }
     
     
@@ -689,12 +689,12 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
 
     
     if(is_fbm){
-      ZYt=big_cprodMat(Y, as.matrix(Z))
+      ZYt=big_cprodMat(Y, as.matrix(Z), ncores=ncores)
       ZY=t(ZYt)
       B=solve(t(Z)%*%Z+L2k)%*%ZY
     }
     else{
-      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y,ncores=ncores)
     }
     
 
@@ -762,7 +762,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
 }
 
 
-projectPLIER = function(PLIERres, newdata, scale=1) {
+projectPLIER = function(PLIERres, newdata, scale=1, ncores=1) {
   stopifnot(nrow(PLIERres$Z) == nrow(newdata))
   
   # Check if newdata is a FBM/big.matrix object
@@ -774,7 +774,7 @@ projectPLIER = function(PLIERres, newdata, scale=1) {
   if (is_fbm) {
     # FBM implementation - use big_cprodMat for efficient computation
     # But ensure Z is a standard matrix, not a Matrix package object
-    ZYt = big_cprodMat(newdata, Z_matrix)
+    ZYt = big_cprodMat(newdata, Z_matrix, ncores=ncores)
     ZY = t(ZYt)
   } else {
     # Standard matrix implementation - use regular matrix multiplication
@@ -789,4 +789,75 @@ projectPLIER = function(PLIERres, newdata, scale=1) {
   B = solve(ZtZ + L2k) %*% ZY
   
   return(B)
+}
+
+#' @param  data the same data as to be used for PLIER (z-score recommended) or alternatively the result of an svd calculation
+#' @param method Either "eblow" (fast) or "permutation" (slower, but less heuristic)
+#' @param B number of permutations
+#' @param seed seed for reproducibility
+#' @export
+num.pc <- function(data, method = "elbow", B = 20, seed = NULL) {
+  method <- match.arg(method, c("elbow", "permutation"))
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  warn <- NULL
+  if ((class(data) != "list") & (class(data) != "rsvd")) {
+    message("Computing svd")
+    n <- ncol(data)
+    m <- nrow(data)
+    data <- rowNorm(data)
+    if (n < 500) {
+      k <- n
+    } else {
+      k <- max(200, n / 4)
+    }
+    if (k == n) {
+      uu <- svd(data)
+    } else {
+      set.seed(123456)
+      uu <- rsvd(data, k, q = 3)
+    }
+  } else if (!is.null(data[["d"]])) {
+    if (method == "permutation") {
+      message("Original data is needed for permutation method.\nSetting method to elbow")
+      method <- "elbow"
+    }
+
+    uu <- data
+  }
+
+
+
+  if (method == "permutation") {
+    # nn = min(c(n, m))
+    dstat <- uu$d[1:k]^2 / sum(uu$d[1:k]^2)
+    dstat0 <- matrix(0, nrow = B, ncol = k)
+    for (i in 1:B) {
+      dat0 <- t(apply(data, 1, sample, replace = FALSE))
+      if (k == n) {
+        uu0 <- svd(dat0)
+      } else {
+        set.seed(123456)
+        uu0 <- rsvd(dat0, k, q = 3)
+      }
+      dstat0[i, ] <- uu0$d[1:k]^2 / sum(uu0$d[1:k]^2)
+    }
+    psv <- rep(1, k)
+    for (i in 1:k) {
+      psv[i] <- mean(dstat0[, i] >= dstat[i])
+    }
+    for (i in 2:k) {
+      psv[i] <- max(psv[(i - 1)], psv[i])
+    }
+
+    nsv <- sum(psv <= 0.1)
+  } else if (method == "elbow") {
+    x <- smooth(xraw <- abs(diff(diff(uu$d))), twiceit = T)
+    # plot(x)
+
+
+    nsv <- which(x <= quantile(x, 0.5))[1] + 1
+  }
+  return(nsv)
 }
