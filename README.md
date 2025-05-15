@@ -18,8 +18,6 @@ This repository includes several RMarkdown-based vignettes organized by analysis
 ### `vignettes/00_setup/`
 This folder is reserved for initial setup scripts or supporting files. *(Currently empty.)*
 
----
-
 ### `vignettes/01_model_building/`
 This section contains scripts to build PLIER2 models on different datasets.
 
@@ -43,8 +41,6 @@ Includes generated plots (e.g., `figure-html/unnamed-chunk-10-1.png`).
 Located in `01_model_building/recount2/`, this vignette:
 - `recount2.Rmd`: Processes recount2 data and builds a PLIER2 model.
 
----
-
 ### `vignettes/02_model_comparisons/`
 This section compares model performance between PLIER and PLIER2.
 
@@ -52,12 +48,8 @@ This section compares model performance between PLIER and PLIER2.
 - `gtex_comparisons.Rmd`: Compares latent variable structure, pathway enrichments, and variance explained between PLIER and PLIER2 models.
 - `gtex_PLIER2_params.Rmd`: Summarizes and evaluates parameter choices and outputs of the PLIER2 model.
 
----
-
 ### `vignettes/03_model_performance/`
 Reserved for benchmarking and performance evaluation of PLIER2 on various datasets. *(Currently empty.)*
-
----
 
 ### `vignettes/04_model_biology/`
 Planned for biological interpretation and downstream functional analysis using latent variables. *(Currently empty.)*
