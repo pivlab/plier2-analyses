@@ -2,13 +2,12 @@
 title: "ARCHS4 - Data download"
 output: html_document
 ---
-
-```{r load_config}
+```{r load_libraries}
 library(here)
-source(here("config.R"))
 ```
 
-```{r load_libraries}
+```{r load_config}
+source(here("config.R"))
 ```
 
 ```{r paths}
@@ -21,10 +20,8 @@ dir.create(output_pathways_dir, showWarnings = FALSE, recursive = TRUE)
 
 ```{r download_archs4, echo = TRUE, message = TRUE}
 if (!file.exists(config$ARCHS4$DATASET_FILE)) {
-  # FIXME: replace by "download.file"? see example below; wget is not available in every system
-  command <- sprintf("wget -c '%s' -O '%s'", config$ARCHS4$URL, config$ARCHS4$DATASET_FILE)
   tryCatch({
-    system(command)
+    download.file(config$ARCHS4$URL, config$ARCHS4$DATASET_FILE, mode = "wb")
     cat("File downloaded successfully to:", config$ARCHS4$DATASET_FILE, "\n")
   }, error = function(e) {
     cat("Error during download:", e$message, "\n")

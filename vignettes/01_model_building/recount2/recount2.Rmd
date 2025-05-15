@@ -11,13 +11,12 @@ library(Matrix)
 library(knitr)
 library(here)
 library(biomaRt)
-#library(rhdf5)
-#library(hdf5r)
 ```
 
 Output 
 
 ```{r}
+# TODO: loading parameters from config.R
 output_nb_path <- here("output/vignettes/plier2_testing/recount2")
 dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
 ```
@@ -61,6 +60,7 @@ which was the input for PLIER
 Read preprocessed recount2 data
 
 ```{r}
+# TODO: loading parameters from config.R
 data_mat <- readRDS(here("data/recount2/recount_data_prep_PLIER.RDS"))
 
 meta <- list()
@@ -73,6 +73,7 @@ rm(data_mat)
 Read in recount2 file
 
 ```{r}
+# TODO: loading parameters from config.R
 rpkm.df <- readRDS(here("data/recount2/recount_rpkm.RDS"))
 
 # Transform ensembl id to genesymbol
@@ -121,7 +122,7 @@ recount2FBM <- FBM(
 Populate it with data
 
 ```{r}
-# Populate in chunks (much faster for large matrices)
+# TODO: loading parameters from config.R
 block_size <- 100  # Adjust based on your system memory
 n_blocks <- ceiling(n_genes / block_size)
 
@@ -145,6 +146,7 @@ plot(rowStats$row_means, rowStats$row_variances, log="y")
 Filter the data. Doing aggressive filtering to reduce the number of genes.
 
 ```{r}
+# TODO: loading parameters from config.R
 filterResult=filterFBM(recount2FBM, rowStats,mean_cutoff = 1, var_cutoff = 0.1, backingfile =paste0(fbm_file, "_filtered")) 
 recount2FBMfiltered=filterResult$fbm_filtered
 meta$gene_symbols=meta$gene_symbols[filterResult$kept_rows]
@@ -168,6 +170,14 @@ saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
 Precompute the SVD
 
 ```{r}
+# TODO: k should be calculated like:
+# n_genes   <- length(meta$rowNames)
+# n_samples <- length(meta$colNames)
+# 
+# SVD_K <- min(n_genes, n_samples) - 1
+# message(SVD_K)
+# example in gtex and archs4
+
 k = 800
 recount2FBM.svd=big_randomSVD(recount2FBMfiltered, k = k)
 ```
@@ -175,6 +185,12 @@ recount2FBM.svd=big_randomSVD(recount2FBMfiltered, k = k)
 Run simpleDecomp as the base model 
 
 ```{r}
+# TODO: k should be PLIER_K and calculated using elbow like in archs4 and gtex
+# svd_list <- list(d=gtexFBM.svd$d)
+# PLIER_K <- num.pc(svd_list) * 2
+# 
+# message(paste0("K inferred for PLIER: ", PLIER_K))
+
 decomp_file <- file.path(output_nb_path, "recount2SimpleDecompResult.RDS")
 
 if (!file.exists(decomp_file)) {
@@ -188,6 +204,7 @@ if (!file.exists(decomp_file)) {
 Download some pathways
 
 ```{r}
+# TODO: download prior like in gtex or archs4
 gmtList=list()
 
 gmtList[["Wiki"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human")
@@ -200,8 +217,6 @@ gmtList[["CellMarkers"]]=getGMT("https://maayanlab.cloud/Enrichr/geneSetLibrary?
 Create a pathMat object and save
 ```{r}
 pathMat = gmtListToSparseMat(gmtList[c(5)])
-#saveRDS(gmtList, "gmtList.RDS")
-#saveRDS(pathMat, "pathMat.RDS")
 ```
 
 Get a matched pathway set
@@ -215,8 +230,10 @@ Chat=getChat(matchedPaths, method = "fast")
 
 Run PLIER2, setting `max.iter` low for demonstration
 ```{r}
-time_taken2 <- system.time({
-  recount2.plier2 = PLIERv2(
+# TODO: loading parameters from config.R
+# TODO: use PLIER_K
+
+recount2.plier2 = PLIERv2(
     recount2FBMfiltered,
     matchedPaths,
     sdres = recount2.sdres,
@@ -227,10 +244,6 @@ time_taken2 <- system.time({
     max.iter = 350,
     k = k
   )
-})
-
-print(time_taken2)
-save(time_taken2, file = file.path(output_nb_path, "recount2_PLIER2_time_taken.rds"))
 
 saveRDS(recount2.plier2, file = file.path(output_nb_path, "recount2_PLIER2.rds"))
 ```
@@ -241,9 +254,10 @@ Run PLIER with the same inputs than PLIER2
 
 ```{r}
 library(PLIER)
+# TODO: loading parameters from config.R
+# TODO: use PLIER_K
 
-time_taken <- system.time({
-  recount2.plier = PLIER::PLIER(
+recount2.plier = PLIER::PLIER(
     recount2FBMfiltered[], 
     as.matrix(matchedPaths), 
     svdres = recount2FBM.svd, 
@@ -252,10 +266,6 @@ time_taken <- system.time({
     max.iter = 350, 
     k = k
   )
-})
-
-print(time_taken)
-save(time_taken, file = file.path(output_nb_path, "recount2_PLIER_time_taken.rds"))
 
 saveRDS(recount2.plier, file = file.path(output_nb_path, "recount2_PLIER.rds"))
 ```

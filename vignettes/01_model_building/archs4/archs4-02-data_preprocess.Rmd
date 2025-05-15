@@ -3,19 +3,19 @@ title: "ARCHS4 - Data preprocess"
 output: html_document
 ---
 
-```{r load_config}
+```{r load_libraries}
+library(hdf5r)
+library(biomaRt)
+library(dplyr)
 library(here)
+```
+
+```{r load_config}
 source(here("config.R"))
 ```
 
 ```{r load_functions}
 source(here("R/utilsNew.R"))
-```
-
-```{r load_libraries}
-library(hdf5r)
-library(biomaRt)
-library(dplyr)
 ```
 
 ```{r paths}
