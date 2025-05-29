@@ -1,4 +1,14 @@
+library(nnls)
+library(doParallel)
+library(foreach)
 
+row_cor <- function(A, B) {
+  A_centered <- A - rowMeans(A)
+  B_centered <- B - rowMeans(B)
+  numerator <- rowSums(A_centered * B_centered)
+  denom <- sqrt(rowSums(A_centered^2) * rowSums(B_centered^2))
+  numerator / denom
+}
 
 mat_mult <- function(mat1, mat2) {
   is_fbm <- inherits(mat1, "FBM") 
@@ -49,29 +59,33 @@ binarizeTop=function(Z, top, keepVals=T){
 }
 
 
-solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast", alpha=0.9, maxPath=5,  nfolds=5, intercept=T, useSE=F, top=NULL, binary=FALSE, ...){
+solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast", alpha=0.9, maxPath=10,  nfolds=5,  useSE=F, top=NULL, binary=F,  parallel=F, nlambda=20, scale=F, refit=T,...){
   if(nrow(Z)!=nrow(priorMat)){
     cm=commonRows(Z, priorMat)
     Z=Z[cm,]
     iim=match(cm, rownames(priorMat))
     priorMat=priorMat[iim,]
     show(dim(priorMat))
+    message("matching rows")
   }
+  print(scale)
   if(is.null(Chat)){
     Chat=pinv.ridge(crossprod(priorMat), 5)%*%(t(priorMat))
   }
-  message("New solve U")
+  #printmessage("New solve U")
   Ur=Chat%*%Z #get U by OLS
   show(dim(Ur))
   Ur=apply(-Ur,2,rank) #rank
   Urm=apply(Ur,1,min)
   
-  
+  #Zhat <- matrix(0, nrow = nrow(Z), ncol = ncol(Z))
   U=matrix(0,nrow=ncol(priorMat), ncol=ncol(Z))
   pathwaySelection=match.arg(pathwaySelection, c("fast", "complete"))
   
   if(!is.null(top)){
-    Z=binarizeTop(Z, top, keepVals = TRUE)
+    Znew=binarizeTop(Z, top, keepVals = TRUE)
+    print(colSums(Z)[which((colSums(Znew>0)<50))])
+    Z=Znew
   }
   if(pathwaySelection=="complete"){
     
@@ -79,50 +93,223 @@ solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast",
     message(paste("Picked", length(iip), "pathways"))
   }
   
+  if(!parallel){
+    for(i in 1:ncol(Z)){
+       # message(paste0("column ", i))
+      if(pathwaySelection=="fast"){
+        iip=which(Ur[,i]<=maxPath)
+        
+        
+      }
+      
+      if(!binary){  #not doing a binary prediction
+    
+        set.seed(1); gres=cv.glmnet(y=Z[,i], x=priorMat[,iip], alpha=alpha, lower.limits=0, foldid =((1:nrow(Z)) %%nfolds)+1,  keep = T , nfolds = nfolds, standardize=scale, dfmax=maxPath, nlambda=nlambda,...)
+      
+        
+        #plot(gres)
+      }
+      else{
+        
+        set.seed(1);gres=cv.glmnet(y=(Z[,i]>0)+1-1, x=priorMat[,iip], family="binomial", alpha=alpha, lower.limits=0, foldid =((1:nrow(Z)) %%nfolds)+1,  keep = F , nfolds = nfolds,  type.measure="auc", dfmax=maxPath, nlambda=nlambda, standardize=scale,nlambda=nlambda,  ...)
+      }
+      
+      
+      if(refit){
+      
+        # Select lambda
+        s_best <- if (useSE) gres$lambda.1se else gres$lambda.min
+        active_coef <- coef(gres, s = s_best)
+        active_ix <- which(active_coef[-1] != 0)
+        selected_features <- iip[active_ix]
+        if(length(selected_features)==0)
+          next
+        X_sel <- priorMat[, selected_features, drop = FALSE]
+        
+        # Add dummy column if only one predictor
+        add_dummy <- ncol(X_sel) == 1
+        if (add_dummy) {
+          X_sel <- cbind(X_sel, dummy = 0)
+        }
+        
+        # Fit relaxed model
+        if (!binary) {
+          fit_relaxed <- glmnet(X_sel, Z[, i], alpha = 0, lambda = 0,
+                                lower.limits = 0,standardize=scale)
+          coefs <- as.vector(coef(fit_relaxed))[-1]
+          if (add_dummy) coefs <- coefs[-length(coefs)]
+          U[selected_features, i] <- coefs
+        #  Zhat[, i] <- predict(fit_relaxed, newx = X_sel, s = 0)[,1]
+        } else {
+          fit_relaxed <- glmnet(X_sel, (Z[, i] > 0) + 0, family = "binomial", alpha = 0, lambda = 0,
+                                lower.limits = 0,standardize=scale)
+          coefs <- as.vector(coef(fit_relaxed))[-1]
+          if (add_dummy) coefs <- coefs[-length(coefs)]
+          U[selected_features, i] <- coefs
+         # Zhat[, i] <- predict(fit_relaxed, newx = X_sel, s = 0, type = "response")[,1]
+        
+        }
+      
+      }
+      else{
+      betaI=getNonZeroBetas(gres,se = useSE, index=T)
+      
+      beta <- getNonZeroBetas(gres, se = useSE, index = FALSE)
+      U[iip[betaI], i] <- as.vector(beta)
+    
+      }
+      #end for i in Z
+      
+      
+      
+     
+
+    }
+    
+    
+    
+    message(paste("Number of annotated columns is", sum(colSums(U)>0)))
+   # rownames(U)=substr(colnames(priorMat),1,30)
+    rownames(U)=colnames(priorMat)
+    colnames(U)=paste("LV", 1:ncol(U))
+    
+    
+
+  }   #end not parallel
+  else{
+    
+    message("parallel")
+    ncores <- parallel::detectCores()/2
+    cl <- makeCluster(ncores)
+    registerDoParallel(cl)
+    
+    U_list <- foreach(i = 1:ncol(Z), .packages = c("glmnet", "nnls"), .export = c("getNonZeroBetas")) %dopar% {
+      if (pathwaySelection == "fast") {
+        iip <- which(Ur[, i] <= maxPath)
+      }
+      
+      set.seed(1)
+      if (!binary) {
+        gres <- cv.glmnet(
+          y = Z[, i], x = priorMat[, iip], alpha = alpha, lower.limits = 0,
+          foldid = ((1:nrow(Z)) %% nfolds) + 1, keep = TRUE,
+          nfolds = nfolds, standardize = FALSE, dfmax = maxPath, nlambda = nlambda, ...
+        )
+      } else {
+        gres <- cv.glmnet(
+          y = (Z[, i] > 0) + 0, x = priorMat[, iip], family = "binomial",
+          alpha = alpha, lower.limits = 0, foldid = ((1:nrow(Z)) %% nfolds) + 1,
+          keep = FALSE, nfolds = nfolds, standardize = scale,
+          type.measure = "auc", dfmax = maxPath, nlambda = nlambda, ...
+        )
+      }
+      
+      if (refit) {
+        s_best <- if (useSE) gres$lambda.1se else gres$lambda.min
+        active_coef <- coef(gres, s = s_best)
+        active_ix <- which(active_coef[-1] != 0)
+        selected_features <- iip[active_ix]
+        if (length(selected_features) == 0) return(rep(0, ncol(priorMat)))
+        
+        X_sel <- priorMat[, selected_features, drop = FALSE]
+        add_dummy <- ncol(X_sel) == 1
+        if (add_dummy) X_sel <- cbind(X_sel, dummy = 0)
+        
+        if (!binary) {
+          fit_relaxed <- glmnet(X_sel, Z[, i], alpha = 0, lambda = 0,
+                                lower.limits = 0, standardize = scale)
+        } else {
+          fit_relaxed <- glmnet(X_sel, (Z[, i] > 0) + 0, family = "binomial",
+                                alpha = 0, lambda = 0, lower.limits = 0,
+                                standardize = scale)
+        }
+        coefs <- as.vector(coef(fit_relaxed))[-1]
+        if (add_dummy) coefs <- coefs[-length(coefs)]
+        
+        u_col <- rep(0, ncol(priorMat))
+        u_col[selected_features] <- coefs
+      } else {
+        betaI <- getNonZeroBetas(gres, se = useSE, index = TRUE)
+        beta <- getNonZeroBetas(gres, se = useSE, index = FALSE)
+        u_col <- rep(0, ncol(priorMat))
+        u_col[iip[betaI]] <- as.vector(beta)
+      }
+      
+      u_col
+    }
+    stopCluster(cl)
+    
+    U <- do.call(cbind, U_list) 
+  }
+  return(list(U = U, Zhat = Zhat))
   
-  for(i in 1:ncol(Z)){
-    
-    if(pathwaySelection=="fast"){
-      iip=which(Ur[,i]<=maxPath)
+  
+if(F){
+  
+    U_list <- foreach(i = 1:ncol(Z), .packages = c("glmnet", "nnls"), .export = c("getNonZeroBetas", "getBestIndex")) %dopar% {
+      if (pathwaySelection == "fast") {
+        iip <- which(Ur[, i] <= maxPath)
+      }
       
-    }
-    if(!binary){  
+      if (!binary) {
+        set.seed(1)
+        gres <- cv.glmnet(
+          y = Z[, i], x = priorMat[, iip], alpha = alpha, lower.limits = 0,
+          foldid = ((1:nrow(Z)) %% nfolds) + 1, intercept = intercept, keep = TRUE,
+          nfolds = nfolds, standardize = FALSE, dfmax = maxPath, , nlambda=nlambda,...
+        )
+      } else {
+        set.seed(1)
+        gres <- cv.glmnet(
+          y = (Z[, i] > 0) + 1 - 1, x = priorMat[, iip], family = "binomial",
+          alpha = alpha, lower.limits = 0, foldid = ((1:nrow(Z)) %% nfolds) + 1,
+          intercept = intercept, keep = TRUE, nfolds = nfolds,
+          standardize = TRUE, type.measure = "auc", dfmax = maxPath, , nlambda=20, ...
+        )
+      }
       
-      set.seed(1); gres=cv.glmnet(y=Z[,i], x=priorMat[,iip], alpha=alpha, lower.limits=0, foldid =((1:nrow(Z)) %%nfolds)+1, 
-                                  intercept=intercept, keep = T , nfolds = nfolds, standardize=F, dfmax=maxPath, ...)
-      #plot(gres)
+      betaI <- getNonZeroBetas(gres, se = useSE, index = TRUE)
+      u_col <- rep(0, ncol(priorMat))
+      
+      if (useNNLS) {
+        X_sel <- priorMat[, iip[betaI], drop = FALSE]
+        fit <- nnls::nnls(X_sel, Z[, i])
+        u_col[iip[betaI]] <- fit$x
+      } else {
+        beta <- getNonZeroBetas(gres, se = useSE, index = FALSE)
+        u_col[iip[betaI]] <- as.vector(beta)
+      }
+      
+      u_col
     }
-    else{
-      set.seed(1);gres=cv.glmnet(y=(Z[,i]>0)+1-1, x=priorMat[,iip], family="binomial", alpha=alpha, lower.limits=0, foldid =((1:nrow(Z)) %%nfolds)+1, intercept=intercept, keep = T , nfolds = nfolds,  standardize = T, type.measure="auc", dfmax=dfm, ...)
-    }
-    betaI=getNonZeroBetas(gres,se = useSE, index=T)
-    beta=getNonZeroBetas(gres,se = useSE, index=F)
     
-    U[iip[betaI],i]=as.vector(beta)
+    stopCluster(cl)
     
+    U <- do.call(cbind, U_list) 
   }
   message(paste("Number of annotated columns is", sum(colSums(U)>0)))
-  rownames(U)=substr(colnames(priorMat),1,30)
+  
+  rownames(U)=colnames(priorMat)
   colnames(U)=paste("LV", 1:ncol(U))
   return(U)
 }
 
-getChat=function(priorMat, method="fast"){
-  if(method=="fast"){
-    #this doesn't account for any covariance
+
+getChat <- function(priorMat, method = "fast") {
+  method <- match.arg(method, choices = c("fast", "inverse"))
+  
+  if (method == "fast") {
     message("Presolving using dot method")
-    L2n=sqrt(colSums(priorMat^2))
-    Chat=t(sweep(priorMat,2,L2n, "/"))
-    message("done")
-  }
-  else{
+    L2n <- sqrt(colSums(priorMat^2))+0.5 #guard against any zeros
+    Chat <- t(sweep(priorMat, 2, L2n, "/"))
+  } else {
     message("Presolving using inverse method")
-    Chat=pinv.ridge(crossprod(priorMat), 5)%*%(t(priorMat))
-    message("done")
+    Chat <- pinv.ridge(crossprod(priorMat), 5) %*% t(priorMat)
   }
+  
+  message("done")
   Chat
 }
-
 
 
 
@@ -152,7 +339,7 @@ getAUCstats=function(summary){
 
 getMatchedPathwayMat=function(pathMat, new.genes, min.genes=10){
   cm=intersect(rownames(pathMat), new.genes)
-  message("there are ", length(cm), " genes in the intersction between data and prior")
+  mymessage("there are ", length(cm), " genes in the intersction between data and prior")
   matchPathMat=Matrix(0, nrow=length(new.genes), ncol=ncol(pathMat), sparse=T)
   rownames(matchPathMat)=new.genes
   colnames(matchPathMat)=colnames(pathMat)
@@ -238,7 +425,63 @@ crossVal=function(plierRes,priorMat, priorMatcv){
 
 
 
-
+crossValP <- function(plierRes, priorMat, priorMatcv) {
+  message("Running CV in parallel")
+  ii <- which(colSums(plierRes$U) > 0)
+  registerDoParallel(cores = parallel::detectCores())
+  
+  
+  res <- foreach(i = ii, .combine = 'list', .multicombine = TRUE, .packages = c("Matrix")) %dopar% {
+    
+    iipath <- which(plierRes$U[, i] > 0)
+    local_out <- matrix(ncol = 4, nrow = 0)
+    local_Uauc <- Matrix(0, nrow = nrow(plierRes$U), ncol = 1, sparse = TRUE)
+    local_Up <- Matrix(0, nrow = nrow(plierRes$U), ncol = 1, sparse = TRUE)
+    
+    if (length(iipath) > 1) {
+      for (j in iipath) {
+        iiheldout <- which((rowSums(priorMat[, iipath, drop = FALSE]) == 0) | 
+                             (priorMat[, j] > 0 & priorMatcv[, j] == 0))
+        aucres <- AUC(priorMat[iiheldout, j], plierRes$Z[iiheldout, i])
+        local_out <- rbind(local_out, c(colnames(priorMat)[j], i, aucres$auc, aucres$pval))
+        local_Uauc[j, 1] <- aucres$auc
+        local_Up[j, 1] <- -log10(aucres$pval)
+        
+        
+        
+      }
+    } else {
+      j <- iipath
+      iiheldout <- which((rowSums(matrix(priorMat[, iipath], ncol = 1)) == 0) | 
+                           (priorMat[, j] > 0 & priorMatcv[, j] == 0))
+      aucres <- AUC(priorMat[iiheldout, j], plierRes$Z[iiheldout, i])
+      local_out <- rbind(local_out, c(colnames(priorMat)[j], i, aucres$auc, aucres$pval))
+      local_Uauc[j, 1] <- aucres$auc
+      local_Up[j, 1] <- -log10(aucres$pval)
+    }
+    
+    list(out = local_out, Uauc = local_Uauc, Up = local_Up, col = i)
+  }
+  
+  # Combine results
+  Uauc <- Matrix(0, nrow = nrow(plierRes$U), ncol = ncol(plierRes$U), sparse = TRUE)
+  Up <- Matrix(0, nrow = nrow(plierRes$U), ncol = ncol(plierRes$U), sparse = TRUE)
+  out <- matrix(ncol = 4, nrow = 0)
+  for (r in res) {
+    if (!is.null(r$Uauc)) Uauc[, r$col] <- r$Uauc[, 1]
+    if (!is.null(r$Up)) Up[, r$col] <- r$Up[, 1]
+    
+    out <- rbind(out, r$out)
+  }
+  
+  out <- data.frame(out, stringsAsFactors = FALSE)
+  out[, 3] <- as.numeric(out[, 3])
+  out[, 4] <- as.numeric(out[, 4])
+  out[, 5] <- BH(out[, 4])
+  colnames(out) <- c("pathway", "LV index", "AUC", "p-value", "FDR")
+  
+  return(list(Uauc = Uauc, Upval = Up, summary = out))
+}
 
 
 getNonZeroBetas=function(gres,index=T, i=NULL, se=F,vector=F, intercept=F){
@@ -276,7 +519,7 @@ getBestIndex=function(gres, se=F){
 
 
 simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
-                      Zpos=T,max.iter=200, tol=5e-6, trace=F,
+                      Zpos=T,max.iter=200, tol=5e-3, trace=F,
                       rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0){
   
   
@@ -326,7 +569,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     svdres <- rotateSVD(svdres)
   }
   
-
+  
   
   if(is.null(L1)){
     L1=svdres$d[k]*scale
@@ -373,7 +616,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
   
   pb <- txtProgressBar(min = 0, max = max.iter, style = 3)  # Set a high max value
- 
+  
   for ( i in 1:max.iter){
     setTxtProgressBar(pb, i) # Avoid exceeding 100
     #main loop    
@@ -397,20 +640,25 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     
     
     if(is_fbm){
-    ZYt=big_cprodMat(Y, as.matrix(Z))
-    ZY=t(ZYt)
-    B=solve(t(Z)%*%Z+L2k)%*%ZY
+      ZYt=big_cprodMat(Y, as.matrix(Z))
+      ZY=t(ZYt)
+      B=solve(t(Z)%*%Z+L2k)%*%ZY
     }
     else{
-    B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
+      B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
     }
     
     #update error
     Bdiff=sum((B-oldB)^2)/sum(B^2)
+    
+    minCor=min(row_cor(B, oldB))
+    
+    Bdiff=1-minCor
+    
     BdiffTrace=c(BdiffTrace, Bdiff)
- 
+    
     if(trace){
-      message(paste0("iter",i, ))
+      message(paste0("iter",i, ", Bdiff=", Bdiff, ", MinCor=", minCor ))
     }
     
     #check for convergence
@@ -421,11 +669,11 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
       BdiffCount=BdiffCount-1
     }
     
-    if(Bdiff<tol &&i>40){
+    if(Bdiff<tol &&i>adaptive.iter+10){
       message(paste0("converged at  iteration ", i))
       break
     }
-    if( BdiffCount>5&&i>40){
+    if( BdiffCount>5&&i>adaptive.iter+10){
       message(paste0("stopped at  iteration ", i, " Bdiff is not decreasing"))
       break
     }
@@ -452,7 +700,8 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
 
 
 
-PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=5, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=1e-6, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("complete", "fast"), multiplier=1, adaptive.frac=0){
+PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=10, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=5e-5, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("fast"), multiplier=1, adaptive.frac=0, useNNLS=T){
+  
   
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
   
@@ -556,7 +805,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     }
   }
   else{
-    message("usign SDres provided")
+    message("using SDres provided")
     
     if(nrow(Y)!=nrow(sdres$Z)){
       if(is.null(rownames(Y))|is.null(rownames(sdres$Z))){
@@ -564,27 +813,30 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       }    
       sdres$Z=sdres$Z[rownames(Y),]
     }
-    u.iter=1
+    u.iter=2
     k=ncol(sdres$Z)
   }
   
   Z=sdres$Z
-
+  
   if(is.null(L1)){
     L1=sdres$L1
   }
   if(is.null(L2)){
     L2=sdres$L2
   }
+  L1=L1*multiplier
+  L2=L2/multiplier
+  message(paste0("L1=", L1, "; L2=", L2))
   
   if(ncol(sdres$B)==ncol(Y)){
     B=sdres$B
   }
   
   oldB=B
-
   
-
+  
+  
   
   
   
@@ -609,7 +861,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   
   
   
-  
+
   iter.full.start=iter.full=u.iter
   
   curfrac=0
@@ -627,7 +879,8 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   else{
     B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
   }
-  
+  Zraw=Z
+  Z2=matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for ( iter in 1:max.iter){
     
     
@@ -639,26 +892,45 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       
       
       
-      
-      if(iter==iter.full&&num.U.updates<max.U.updates ){ #update L3 to the target fraction
-        #solveU=function(Z,  Chat, priorMat, penalty.factor,pathwaySelection="fast", glm_alpha=0.9, maxPath=10, nfolds=5){
+      if(iter>=iter.full&&num.U.updates<max.U.updates& iter %% 2 ==1 ){ 
+ 
         message(paste("Updating U at iteration", iter))
-        U=solveU(Z, Chat, C, penalty.factor, pathwaySelection, glm_alpha, maxPath, binary=F, nfolds=cvn, top=top )
-        
+      if(any(Zraw<0)){
+        stop()
+      }
+       
+          res=solveU(Z, Chat, C, penalty.factor, pathwaySelection, glm_alpha, maxPath, binary=F, nfolds=cvn, top=top, useNNLS=useNNLS )
+        U=res$U
+
         num.U.updates=num.U.updates+1
         
         iter.full=iter.full+iter.full.start
-        Z2=L1*C%*%U*multiplier
+      
+    
+          Z2=L1*C%*%U
+   
+        
       }
       
       
       curfrac=(npos<-sum(apply(U,2,max)>0))/k
       #Z1=Y%*%t(B)
       Z1=mat_mult(Y, t(B))
-      ratio=median((Z2/Z1)[Z2>0&Z1>0])
-      Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
+     
+      
+      ii=which(Z2>0)
+      ratio=median(Z2[ii]/abs(Z1[ii]))
       
       
+      message(paste0("The prior contribution is ", round(ratio,7)))
+      
+
+
+        Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
+      
+ 
+      
+       # boxplot(as.matrix(Z[, 1:10]))
     }
     
     else{
@@ -670,23 +942,26 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     
     if(adaptive.frac>0){
       
-      
+      Zraw=Z
+      Zraw[Zraw<0]=0
       cutoffs=apply(Z,2, getT)
       
       for(j in 1:ncol(Z)){
         Z[Z[,j]<cutoffs[j],j]=0
       }
+      
     }
     else{
       
       Z[Z<0]=0
+      Zraw=Z
     }
     
     
     
     
     oldB=B
-
+    
     
     if(is_fbm){
       ZYt=big_cprodMat(Y, as.matrix(Z))
@@ -697,23 +972,20 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       B=solve(t(Z)%*%Z+L2k)%*%mat_mult(t(Z),Y)
     }
     
-
-    
-    
-    
     Bdiff=sum((B-oldB)^2)/sum(B^2)
+    minCor=min(row_cor(B, oldB))
+    
+   
+    
     BdiffTrace=c(BdiffTrace, Bdiff)
     
-    
-    #err0=sum((Y-Z%*%B)^2)+sum((Z-C%*%U)^2)*L1+sum(B^2)*L2
-    if(trace & iter >=iter.full.start){
-      
-      message(paste0("iter",iter,";pos. col. U=", sum(colSums(U)>0)))
-    }
-    else if (trace){
-      message(paste0("iter",iter))
+    if(trace){
+      message(paste0("iter",i, ", Bdiff=", Bdiff, ", MinCor=", minCor ))
     }
     
+    
+   
+
     if(iter>52&&Bdiff>BdiffTrace[iter-50]){
       BdiffCount=BdiffCount+1
       message("Bdiff is not decreasing")
@@ -738,23 +1010,30 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
   out=list( B=B, Z=Z, U=U, C=C, L1=L1, L2=L2, heldOutGenes=heldOutGenes)
   
   if(doCrossval){
+    if(adaptive.frac!=0){
+      message("Updating Z for CV")
+      out$Z=Zraw
+      out$Z[out$Z<0]=0
+    }
     message("crossValidation")
     outAUC=crossVal(out, priorMat, priorMatCV)
+    out$Z=Z
     out$Uauc=outAUC$Uauc
     out$Up=outAUC$Upval
     out$summary=outAUC$summary
     out$priorMatCV=priorMatCV
     out$priorMat=priorMat
+    out$withPrior=which(colSums(out$U)>0)
+    
+    tt=apply(out$Uauc,2,max)
+    message(paste("There are", sum(tt>0.70), " LVs with AUC>0.70"))
+    message(paste("There are", sum(tt>0.90), " LVs with AUC>0.90"))
   }
   else{
     message("Not using cross-validation. No AUCs or p-values")
     
   }
-  out$withPrior=which(colSums(out$U)>0)
-  
-  tt=apply(out$Uauc,2,max)
-  message(paste("There are", sum(tt>0.70), " LVs with AUC>0.70"))
-  message(paste("There are", sum(tt>0.90), " LVs with AUC>0.90"))
+
   #currently not working
   # rownames(out$B)=nameB(out)
   
@@ -789,4 +1068,5 @@ projectPLIER = function(PLIERres, newdata, scale=1) {
   B = solve(ZtZ + L2k) %*% ZY
   
   return(B)
-}
+
+
