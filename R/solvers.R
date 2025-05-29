@@ -65,16 +65,16 @@ solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast",
     Z=Z[cm,]
     iim=match(cm, rownames(priorMat))
     priorMat=priorMat[iim,]
-    show(dim(priorMat))
+
     message("matching rows")
   }
-  print(scale)
+
   if(is.null(Chat)){
     Chat=pinv.ridge(crossprod(priorMat), 5)%*%(t(priorMat))
   }
   #printmessage("New solve U")
   Ur=Chat%*%Z #get U by OLS
-  show(dim(Ur))
+  
   Ur=apply(-Ur,2,rank) #rank
   Urm=apply(Ur,1,min)
   
@@ -84,7 +84,7 @@ solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast",
   
   if(!is.null(top)){
     Znew=binarizeTop(Z, top, keepVals = TRUE)
-    print(colSums(Z)[which((colSums(Znew>0)<50))])
+
     Z=Znew
   }
   if(pathwaySelection=="complete"){
@@ -592,7 +592,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
     B=t(svdres$v[, 1:k]%*%diag(sqrt(svdres$d[1:k])))
     #   B=t(svdres$v[1:ncol(Y), 1:k]%*%diag((svdres$d[1:k])))
     #   B=t(svdres$v[1:ncol(Y), 1:k])
-    show(dim(B))
+
     message("Done")
   }
   else{
@@ -918,19 +918,14 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       Z1=mat_mult(Y, t(B))
      
       
-      ii=which(Z2>0)
-      ratio=median(Z2[ii]/abs(Z1[ii]))
       
       
-      message(paste0("The prior contribution is ", round(ratio,7)))
-      
-
-
-        Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
+            
+      Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
       
  
       
-       # boxplot(as.matrix(Z[, 1:10]))
+
     }
     
     else{
