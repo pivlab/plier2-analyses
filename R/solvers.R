@@ -74,7 +74,7 @@ solveU=function(Z,  Chat=NULL, priorMat, penalty.factor,pathwaySelection="fast",
   }
   #printmessage("New solve U")
   Ur=Chat%*%Z #get U by OLS
-  
+
   Ur=apply(-Ur,2,rank) #rank
   Urm=apply(Ur,1,min)
   
@@ -518,8 +518,8 @@ getBestIndex=function(gres, se=F){
 }
 
 
-simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
-                      Zpos=T,max.iter=200, tol=5e-3, trace=F,
+PLIERbase=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
+                      Zpos=T,max.iter=200, tol=5e-5, trace=F,
                       rseed=NULL, B=NULL, scale=1, pos.adj=3, adaptive.frac=0.05, adaptive.iter=30,  cutoff=0){
   
   
@@ -669,7 +669,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
       BdiffCount=BdiffCount-1
     }
     
-    if(Bdiff<tol &&i>adaptive.iter+10){
+    if((Bdiff<tol|minCor>0.999) &&i>adaptive.iter+10){
       message(paste0("converged at  iteration ", i))
       break
     }
@@ -700,7 +700,7 @@ simpleDecomp=function(Y, k,svdres=NULL, L1=NULL, L2=NULL,
 
 
 
-PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=10, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=5e-5, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("fast"), multiplier=1, adaptive.frac=0, useNNLS=T){
+PLIERfull=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, top=NULL, cvn=5, max.iter=350, trace=F, Chat=NULL, maxPath=10, doCrossval=T, penalty.factor=rep(1,ncol(priorMat)), glm_alpha=0.9, minGenes=10, tol=5e-5, seed=123456, allGenes=F, rseed=NULL, u.iter=20, max.U.updates=1, pathwaySelection=c("fast"), multiplier=1, adaptive.frac=0, useNNLS=T){
   
   
   getT=function(x){-quantile(x[x<0], adaptive.frac)}
@@ -799,9 +799,9 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
     }
     
     
-    message("Simple decomp")
+    message("PLIER base")
     if(is.null(sdres)){
-      sdres=simpleDecomp(Y, k=k)
+      sdres=PLIERbase(Y, k=k)
     }
   }
   else{
@@ -918,14 +918,13 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       Z1=mat_mult(Y, t(B))
      
       
-      
-      
-            
-      Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
+  
+
+        Z=(Z1+Z2)%*%solve(tcrossprod(B)+L1k)
       
  
       
-
+  
     }
     
     else{
@@ -989,7 +988,7 @@ PLIERv2=function(Y, priorMat,svdres=NULL, sdres=NULL,k=NULL, L1=NULL, L2=NULL, t
       BdiffCount=BdiffCount-1
     }
     
-    if(Bdiff<tol &iter>u.iter+10){
+    if((Bdiff<tol|minCor>0.999) &iter>u.iter+10){
       message(paste0(Bdiff, "converged at  iteration ", iter))
       break
     }
