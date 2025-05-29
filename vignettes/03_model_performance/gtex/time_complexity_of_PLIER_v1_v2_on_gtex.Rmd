@@ -1,0 +1,332 @@
+---
+title: "GTEx Preprocessing with Timing"
+output: html_document
+---
+
+<!-- 
+  All output (RDS files, pathway GMTs, logs) will be saved to:
+  plier2/output/vignettes/time_complexity/gtex
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r config, message=FALSE, warning=FALSE}
+library(bigstatsr)
+library(here)
+
+config <- list()
+
+config$GENERAL <- list(
+  N_CORES = 10,
+  CHUNK_SIZE = 100,
+  DATA_DIR = here("data"),
+  OUTPUT_DIR = here("output")
+)
+
+config$GTEx <- list(
+  DATASET_NAME = "gtex",
+  DATASET_FOLDER = here(file.path(config$GENERAL$OUTPUT_DIR, "vignettes", "time_complexity", "gtex")),
+  DATASET_ENSEMBL_VERSION = 107,
+  URL = "https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz",
+  DATASET_FILE = file.path(
+    config$GENERAL$OUTPUT_DIR,
+    "vignettes", "time_complexity", "gtex",
+    "bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds"
+  ),
+  GENES_MEAN_CUTOFF = 1,
+  GENES_VAR_CUTOFF = 0.1,
+  PLIER_PARAMS = list(
+    RANDOM_SVD_N_CORES = 30,
+    RANDOM_SVD_SEED = 123,
+    MULTIPLIER = 3,
+    MAX_U_UPDATES = 3,
+    MAX_ITER = 350,
+    N_CORES = 1
+  )
+)
+```
+
+```{r initialize_timing}
+options(download.file.method = "wget")
+
+timing_log <- data.frame(
+  Step = character(),
+  Time_sec = numeric(),
+  stringsAsFactors = FALSE
+)
+
+total_steps <- 24
+pb <- txtProgressBar(min = 0, max = total_steps, style = 3)
+step_counter <- 0
+
+update_progress <- function(step_name, elapsed_time) {
+  step_counter <<- step_counter + 1
+  timing_log <<- rbind(
+    timing_log,
+    data.frame(Step = step_name, Time_sec = elapsed_time)
+  )
+  setTxtProgressBar(pb, step_counter)
+}
+```
+
+```{r load_libraries}
+step_time <- system.time({
+  if (!requireNamespace("PLIER", quietly = TRUE)) {
+    if (!requireNamespace("devtools", quietly = TRUE)) {
+      install.packages("devtools")
+    }
+    library(devtools)
+    install_github("wgmao/PLIER")
+  }
+
+  library(bigstatsr)
+  library(data.table)
+  library(dplyr)
+  library(rsvd)
+  library(glmnet)
+  library(Matrix)
+  library(knitr)
+  library(here)
+  library(PLIER)
+})
+update_progress("Load libraries", step_time["elapsed"])
+```
+
+```{r load_config_scripts}
+step_time <- system.time({
+  source(here("R/solvers.R"))
+  source(here("R/utilsNew.R"))
+  #source(here("config.R"))
+})
+update_progress("Load config/scripts", step_time["elapsed"])
+```
+
+```{r create_output_dirs}
+step_time <- system.time({
+  output_data_dir <- config$GTEx$DATASET_FOLDER
+  dir.create(output_data_dir, showWarnings = FALSE, recursive = TRUE)
+
+  output_pathways_dir <- file.path(config$GENERAL$DATA_DIR, "pathways")
+  dir.create(output_pathways_dir, showWarnings = FALSE, recursive = TRUE)
+})
+update_progress("Create output dirs", step_time["elapsed"])
+```
+
+```{r save_timings}
+write.csv(timing_log, file = file.path(output_data_dir, "gtex_pipeline_timings.csv"), row.names = FALSE)
+close(pb)
+print(timing_log)
+```
+
+```{r download_gtex_data}
+dest_gz <- file.path(output_data_dir, basename(config$GTEx$URL))
+step_time <- system.time({
+  if (!file.exists(dest_gz)) {
+    download.file(config$GTEx$URL, dest_gz, mode = "wb")
+  }
+})
+update_progress("Download GTEx", step_time["elapsed"])
+```
+
+```{r download_pathways}
+step_time <- system.time({
+  pathways_list <- list(
+    Wiki = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human",
+    MGI = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021",
+    GO = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023",
+    Reactome = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022",
+    CellMarkers = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024"
+  )
+
+  for (nm in names(pathways_list)) {
+    url <- pathways_list[[nm]]
+    destfile <- file.path(output_pathways_dir, paste0(nm, ".gmt"))
+    tryCatch({
+      download.file(url, destfile, mode = "wb")
+    }, error = function(e) {
+      warning("Failed to download ", nm, ": ", conditionMessage(e))
+    })
+  }
+})
+update_progress("Download pathways", step_time["elapsed"])
+```
+
+```{r process_gtex_rds}
+exprs_path <- file.path(config$GTEx$DATASET_FOLDER, basename(config$GTEx$URL))
+output_file <- config$GTEx$DATASET_FILE
+step_time <- system.time({
+  if (!file.exists(output_file)) {
+    exprs_data <- read.table(exprs_path, header = TRUE, sep = "	", skip = 2, check.names = FALSE)
+    saveRDS(exprs_data, output_file)
+  }
+})
+update_progress("Process GTEx", step_time["elapsed"])
+```
+
+```{r aggregate_data}
+step_time <- system.time({
+  gtex <- readRDS(config$GTEx$DATASET_FILE)
+  gtex <- as.data.table(gtex)
+  aggregated_gtex <- gtex[, lapply(.SD, sum), by = Description, .SDcols = is.numeric]
+})
+update_progress("Aggregate GTEx", step_time["elapsed"])
+```
+
+```{r create_fbm}
+step_time <- system.time({
+  meta <- list()
+  meta$rowNames <- aggregated_gtex$Description
+  meta$colNames <- colnames(aggregated_gtex)[-1]
+  data_mat <- as.matrix(aggregated_gtex[, -1])
+  fbm_file <- file.path(output_data_dir, "FBMgtex")
+  gtexFBM <- FBM(nrow = nrow(data_mat), ncol = ncol(data_mat), backingfile = fbm_file, create_bk = TRUE)
+})
+update_progress("Create FBM", step_time["elapsed"])
+```
+
+```{r populate_fbm}
+step_time <- system.time({
+  block_size <- config$GENERAL$CHUNK_SIZE
+  n_blocks <- ceiling(nrow(data_mat) / block_size)
+  pb_inner <- txtProgressBar(min = 0, max = n_blocks, style = 3)
+
+  for (i in 1:n_blocks) {
+    start_row <- (i - 1) * block_size + 1
+    end_row <- min(i * block_size, nrow(data_mat))
+    gtexFBM[start_row:end_row, ] <- data_mat[start_row:end_row, ]
+    setTxtProgressBar(pb_inner, i)
+  }
+  close(pb_inner)
+})
+update_progress("Populate FBM", step_time["elapsed"])
+```
+
+```{r filter_and_zscore}
+step_time <- system.time({
+  cleanFBM(gtexFBM)
+  rowStats <- computeRowStatsFBM(gtexFBM)
+})
+update_progress("Compute row stats", step_time["elapsed"])
+
+step_time <- system.time({
+  filterResult <- filterFBM(
+    gtexFBM, rowStats,
+    mean_cutoff = config$GTEx$GENES_MEAN_CUTOFF,
+    var_cutoff = config$GTEx$GENES_VAR_CUTOFF,
+    backingfile = paste0(fbm_file, "_filtered")
+  )
+  gtexFBMfiltered <- filterResult$fbm_filtered
+  meta$rowNames <- meta$rowNames[filterResult$kept_rows]
+  rowStats$row_means <- rowStats$row_means[filterResult$kept_rows]
+  rowStats$row_variances <- rowStats$row_variances[filterResult$kept_rows]
+})
+update_progress("Filter FBM", step_time["elapsed"])
+
+step_time <- system.time({
+  zscoreFBM(gtexFBMfiltered, rowStats = rowStats)
+})
+update_progress("Z-score FBM", step_time["elapsed"])
+```
+
+```{r save_fbm_meta}
+step_time <- system.time({
+  gtexFBMfiltered$save()
+  saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
+})
+update_progress("Save filtered FBM & meta", step_time["elapsed"])
+```
+
+```{r svd_decomposition}
+step_time <- system.time({
+  SVD_K <- min(length(meta$rowNames), length(meta$colNames)) - 1
+  gtexFBM.svd <- big_randomSVD(gtexFBMfiltered, k = SVD_K)
+  save(gtexFBM.svd, file = file.path(output_data_dir, "svd.rds"))
+})
+update_progress("Compute SVD", step_time["elapsed"])
+
+step_time <- system.time({
+  svd_list <- list(d = gtexFBM.svd$d)
+  PLIER_K <- num.pc(svd_list) * 2
+})
+update_progress("Infer K", step_time["elapsed"])
+```
+
+```{r simple_decomp}
+step_time <- system.time({
+  decomp_file <- file.path(output_data_dir, "gtexSimpleDecompResult.RDS")
+  if (!file.exists(decomp_file)) {
+    gtex.sdres <- simpleDecomp(gtexFBMfiltered, k = PLIER_K, svdres = gtexFBM.svd)
+    saveRDS(gtex.sdres, file = decomp_file)
+  } else {
+    gtex.sdres <- readRDS(decomp_file)
+  }
+})
+update_progress("Run simpleDecomp", step_time["elapsed"])
+```
+
+```{r pathway_matching}
+step_time <- system.time({
+  gmtList <- list(
+    Wiki = getGMT(output_pathways_dir, "Wiki"),
+    MGI = getGMT(output_pathways_dir, "MGI"),
+    GO = getGMT(output_pathways_dir, "GO"),
+    Reactome = getGMT(output_pathways_dir, "Reactome"),
+    CellMarkers = getGMT(output_pathways_dir, "CellMarkers")
+  )
+})
+update_progress("Load pathway GMTs", step_time["elapsed"])
+
+step_time <- system.time({
+  pathMat <- gmtListToSparseMat(gmtList[c(length(gmtList))])
+  save(pathMat, file = file.path(output_data_dir, "pathMat.rds"))
+})
+update_progress("Assemble path matrix", step_time["elapsed"])
+
+step_time <- system.time({
+  matchedPaths <- getMatchedPathwayMat(pathMat, meta$rowNames)
+  save(matchedPaths, file = file.path(output_data_dir, "matchedPaths.rds"))
+  Chat <- getChat(matchedPaths, method = "fast")
+  save(Chat, file = file.path(output_data_dir, "chat.rds"))
+})
+update_progress("Match pathways & Chat", step_time["elapsed"])
+```
+
+```{r run_plier}
+step_time <- system.time({
+  gtex.plier2 <- PLIERv2(
+    gtexFBMfiltered,
+    matchedPaths,
+    sdres = gtex.sdres,
+    Chat = Chat,
+    doCrossval = TRUE,
+    multiplier = config$GTEx$PLIER_PARAMS$MULTIPLIER,
+    max.U.updates = config$GTEx$PLIER_PARAMS$MAX_U_UPDATES,
+    max.iter = config$GTEx$PLIER_PARAMS$MAX_ITER,
+    k = PLIER_K
+  )
+  saveRDS(gtex.plier2, file = file.path(output_data_dir, "gtex_PLIER2.rds"))
+})
+update_progress("Run PLIER2", step_time["elapsed"])
+
+step_time <- system.time({
+  gtex.plier <- PLIER(
+    gtexFBMfiltered[],
+    as.matrix(matchedPaths),
+    svdres = gtexFBM.svd,
+    Chat = as.matrix(Chat),
+    doCrossval = TRUE,
+    max.iter = config$GTEx$PLIER_PARAMS$MAX_ITER,
+    k = PLIER_K
+  )
+  saveRDS(gtex.plier, file = file.path(output_data_dir, "gtex_PLIER.rds"))
+})
+update_progress("Run PLIER1", step_time["elapsed"])
+```
+
+```{r save_timings_final}
+write.csv(timing_log, file = file.path(output_data_dir, "gtex_pipeline_timings.csv"), row.names = FALSE)
+close(pb)
+print(timing_log)
+```
