@@ -1,0 +1,371 @@
+---
+title: "Time complexity of PLIER v1 vs PLER v2 on recount2 data sets"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Initialization
+
+```{r initialization}
+timing_log <- data.frame(
+  Step = character(),
+  Time_sec = numeric(),
+  stringsAsFactors = FALSE
+)
+
+total_steps <- 23
+pb <- txtProgressBar(min = 0, max = total_steps, style = 3)
+step_counter <- 0
+
+update_progress <- function(step_name, elapsed_time) {
+  step_counter <<- step_counter + 1
+  timing_log <<- rbind(
+    timing_log,
+    data.frame(Step = step_name, Time_sec = elapsed_time)
+  )
+  setTxtProgressBar(pb, step_counter)
+}
+```
+
+### Load Libraries
+
+```{r load_libraries}
+step_time <- system.time({
+  library(bigstatsr)
+  library(data.table)
+  library(dplyr)
+  library(rsvd)
+  library(glmnet)
+  library(Matrix)
+  library(knitr)
+  library(here)
+  library(biomaRt)
+
+  if (!requireNamespace("GSEABase", quietly = TRUE)) {
+    if (!requireNamespace("BiocManager", quietly = TRUE)) {
+      install.packages("BiocManager", repos = "https://cran.rstudio.com/")
+    }
+    BiocManager::install("GSEABase")
+  }
+  library(GSEABase)
+})
+update_progress("Load libraries", step_time["elapsed"])
+```
+
+### Create Output Directory
+
+```{r create_output_dir}
+step_time <- system.time({
+  output_nb_path <- here("output/vignettes/time_complexity/recount2")
+  dir.create(output_nb_path, showWarnings = FALSE, recursive = TRUE)
+})
+update_progress("Create output directories", step_time["elapsed"])
+```
+
+### Load Local Files
+
+```{r load_helpers}
+step_time <- system.time({
+  source(here("R/solvers.R"))
+  source(here("R/utilsNew.R"))
+})
+update_progress("Load helper scripts", step_time["elapsed"])
+```
+
+### Download recount2 Dataset
+
+```{r download_dataset}
+step_time <- system.time({
+  url <- "https://figshare.com/ndownloader/files/10881866"
+  output_dir <- here("output/vignettes/time_complexity/recount2/data")
+  zip_file <- file.path(output_dir, "recount2_PLIER_data.zip")
+
+  if (!file.exists(zip_file)) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    command <- sprintf("wget -c '%s' -O '%s'", url, zip_file)
+    tryCatch({
+      system(command)
+      unzip(zip_file, exdir = output_dir)
+      cat("Download and extraction completed.\n")
+    }, error = function(e) {
+      cat("Error during download:", e$message, "\n")
+    })
+  } else {
+    cat("Zip file already exists. Skipping download.\n")
+  }
+})
+update_progress("Download recount2 dataset", step_time["elapsed"])
+```
+
+### Read and Prepare Data
+
+```{r read_preprocessed_data}
+step_time <- system.time({
+  data_mat <- readRDS(here("output/vignettes/time_complexity/recount2/data/recount2_PLIER_data/recount_data_prep_PLIER.RDS"))
+  meta <- list()
+  meta$gene_symbols <- rownames(data_mat$rpkm.cm)
+  meta$samples <- colnames(data_mat$rpkm.cm)
+  rm(data_mat)
+})
+update_progress("Read preprocessed recount2 data", step_time["elapsed"])
+```
+
+```{r read_transform_ids}
+step_time <- system.time({
+  rpkm.df <- readRDS(here("output/vignettes/time_complexity/recount2/data/recount2_PLIER_data/recount_rpkm.RDS"))
+  mart <- biomaRt::useDataset("hsapiens_gene_ensembl", biomaRt::useMart("ensembl"))
+  genes <- unlist(lapply(strsplit(rpkm.df$ENSG, "[.]"), `[[`, 1))
+  rpkm.df$ensembl_gene_id <- genes
+  gene.df <- biomaRt::getBM(filters = "ensembl_gene_id",
+                             attributes = c("ensembl_gene_id", "hgnc_symbol"),
+                             values = genes,
+                             mart = mart)
+  gene.df <- gene.df %>% dplyr::filter(complete.cases(.))
+  rpkm.df <- dplyr::inner_join(gene.df, rpkm.df, by = "ensembl_gene_id")
+  rownames(rpkm.df) <- make.names(rpkm.df$hgnc_symbol, unique = TRUE)
+  rpkm.df <- rpkm.df %>% dplyr::select(-c(ensembl_gene_id:ENSG))
+  data_mat <- rpkm.df[meta$gene_symbols, meta$samples]
+  rm(rpkm.df)
+  data_mat <- as.matrix(as.data.table(data_mat))
+})
+update_progress("Read recount2 file & transform IDs", step_time["elapsed"])
+```
+
+### Create FBM
+
+```{r create_fbm}
+step_time <- system.time({
+  n_genes <- length(meta$gene_symbols)
+  n_samples <- length(meta$samples)
+  fbm_file <- file.path(output_nb_path, "FBMrecount2")
+
+  recount2FBM <- FBM(
+    nrow = n_genes,
+    ncol = n_samples,
+    backingfile = fbm_file,
+    create_bk = TRUE
+  )
+})
+update_progress("Create FBM", step_time["elapsed"])
+```
+
+### Populate FBM
+
+```{r populate_fbm}
+step_time <- system.time({
+  block_size <- 100
+  n_blocks <- ceiling(n_genes / block_size)
+
+  for (i in 1:n_blocks) {
+    start_row <- (i - 1) * block_size + 1
+    end_row <- min(i * block_size, nrow(data_mat))
+    recount2FBM[start_row:end_row, ] <- as.matrix(data_mat[start_row:end_row, ])
+  }
+})
+update_progress("Populate FBM", step_time["elapsed"])
+```
+
+### Clean FBM
+
+```{r clean_fbm}
+step_time <- system.time({
+  cleanFBM(recount2FBM)
+})
+update_progress("Clean FBM", step_time["elapsed"])
+```
+
+### Compute Row Stats
+
+```{r compute_row_stats}
+step_time <- system.time({
+  rowStats <- computeRowStatsFBM(recount2FBM)
+})
+update_progress("Compute row stats", step_time["elapsed"])
+```
+
+### Filter Data
+
+```{r filter_fbm}
+step_time <- system.time({
+  filterResult <- filterFBM(recount2FBM, rowStats, mean_cutoff = 1, var_cutoff = 0.1,
+                            backingfile = paste0(fbm_file, "_filtered"))
+  recount2FBMfiltered <- filterResult$fbm_filtered
+  meta$gene_symbols <- meta$gene_symbols[filterResult$kept_rows]
+  rowStatsAll <- rowStats
+  rowStats$row_means <- rowStats$row_means[filterResult$kept_rows]
+  rowStats$row_variances <- rowStats$row_variances[filterResult$kept_rows]
+})
+update_progress("Filter data", step_time["elapsed"])
+```
+
+### Z-Score FBM
+
+```{r zscore_fbm}
+step_time <- system.time({
+  zscoreFBM(recount2FBMfiltered, rowStats = rowStats)
+})
+update_progress("Z-score FBM", step_time["elapsed"])
+```
+
+### Save FBM
+
+```{r save_fbm}
+step_time <- system.time({
+  recount2FBMfiltered$save()
+  saveRDS(meta, paste0(fbm_file, "_meta.RDS"))
+})
+update_progress("Save FBM", step_time["elapsed"])
+```
+
+### Precompute SVD
+
+```{r svd_precompute}
+step_time <- system.time({
+  k <- 800
+  recount2FBM.svd <- big_randomSVD(recount2FBMfiltered, k = k)
+})
+update_progress("Precompute SVD", step_time["elapsed"])
+```
+
+### Run simpleDecomp
+
+```{r run_simpledecomp}
+step_time <- system.time({
+  decomp_file <- file.path(output_nb_path, "recount2SimpleDecompResult.RDS")
+  if (!file.exists(decomp_file)) {
+    recount2.sdres <- simpleDecomp(recount2FBMfiltered, k = k, svdres = recount2FBM.svd)
+    saveRDS(recount2.sdres, file = decomp_file)
+  } else {
+    recount2.sdres <- readRDS(decomp_file)
+  }
+})
+update_progress("Run simpleDecomp", step_time["elapsed"])
+```{r Download_pathway_priors}
+
+step_time <- system.time({
+  gmt_urls <- list(
+    Wiki = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=WikiPathway_2021_Human",
+    MGI = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MGI_Mammalian_Phenotype_Level_4_2021",
+    GO = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_Biological_Process_2023",
+    Reactome = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=Reactome_2022",
+    CellMarkers = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=CellMarker_2024"
+  )
+
+  gmtList <- list()
+  gmt_dir <- file.path(output_nb_path, "gmt_files")
+  dir.create(gmt_dir, showWarnings = FALSE, recursive = TRUE)
+
+  for (name in names(gmt_urls)) {
+    destfile <- file.path(gmt_dir, paste0(name, ".gmt"))
+    if (!file.exists(destfile)) {
+      download.file(gmt_urls[[name]], destfile, method = "wget")
+    }
+    gmtList[[name]] <- GSEABase::getGmt(destfile)
+  }
+
+  saveRDS(gmtList, file = file.path(output_nb_path, "gmtList_All.rds"))
+})
+update_progress("Download pathway priors", step_time["elapsed"])
+```{r create_pathMat_CellMarkers}
+
+step_time <- system.time({
+  # Use only CellMarkers pathway set
+  gsc <- gmtList[["CellMarkers"]]
+
+  # Extract genes and pathway names
+  gene_sets <- lapply(gsc, function(gs) as.character(geneIds(gs)))
+  names(gene_sets) <- sapply(gsc, function(gs) gs@setName)
+
+  # Get all unique genes across sets
+  all_genes <- unique(unlist(gene_sets))
+  all_genes <- as.character(all_genes)
+
+  # Create empty sparse matrix
+  pathMat <- Matrix::Matrix(
+    0,
+    nrow = length(all_genes),
+    ncol = length(gene_sets),
+    sparse = TRUE,
+    dimnames = list(all_genes, names(gene_sets))
+  )
+
+  # Fill in matrix with binary presence indicators
+  for (i in seq_along(gene_sets)) {
+    gene_indices <- match(gene_sets[[i]], all_genes)
+    gene_indices <- gene_indices[!is.na(gene_indices)]
+    pathMat[gene_indices, i] <- 1
+  }
+
+  saveRDS(pathMat, file = file.path(output_nb_path, "pathMat_CellMarkers.rds"))
+})
+update_progress("Create pathMat", step_time["elapsed"])
+```
+
+### Match Pathway Genes
+
+```{r match_pathway_genes}
+step_time <- system.time({
+  matchedPaths <- getMatchedPathwayMat(pathMat, meta$gene_symbols)
+})
+update_progress("Match pathway genes", step_time["elapsed"])
+
+```
+
+### Compute Chat Matrix
+
+```{r compute_chat}
+step_time <- system.time({
+  Chat <- getChat(matchedPaths, method = "fast")
+})
+update_progress("Compute Chat", step_time["elapsed"])
+```
+
+### Run PLIER2
+
+```{r run_plierv2}
+step_time <- system.time({
+  recount2.plier2 <- PLIERv2(
+    recount2FBMfiltered,
+    matchedPaths,
+    sdres = recount2.sdres,
+    Chat = Chat,
+    doCrossval = TRUE,
+    multiplier = 3,
+    max.U.updates = 3,
+    max.iter = 350,
+    k = k
+  )
+  saveRDS(recount2.plier2, file = file.path(output_nb_path, "recount2_PLIER2.rds"))
+})
+update_progress("Run PLIER2", step_time["elapsed"])
+```
+
+### Run PLIER1
+
+```{r run_plierv1}
+step_time <- system.time({
+  library(PLIER)
+  recount2.plier <- PLIER::PLIER(
+    recount2FBMfiltered[],
+    as.matrix(matchedPaths),
+    svdres = recount2FBM.svd,
+    Chat = as.matrix(Chat),
+    doCrossval = TRUE,
+    max.iter = 350,
+    k = k
+  )
+  saveRDS(recount2.plier, file = file.path(output_nb_path, "recount2_PLIER.rds"))
+})
+update_progress("Run PLIER1", step_time["elapsed"])
+```
+
+### Save Timing Log
+
+```{r save_timing_log}
+write.csv(timing_log, file = file.path(output_nb_path, "recount2_timing_log.csv"), row.names = FALSE)
+```
