@@ -1,0 +1,200 @@
+---
+title: "ARCHS4 - PLIERv2"
+output: html_document
+params:
+  n_iter: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+n_iter <- params$n_iter
+
+save_result_file_name <- "mod_per_plerv2_on_archs4"
+```
+
+**Number of iterations:** `r n_iter`
+
+```{r main_loop, results='asis'}
+for (iter in seq_len(n_iter)) {
+  cat("\n\n## Iteration", iter, "of", n_iter, "\n\n")
+  timing <- data.frame(
+    step = character(),
+    seconds = numeric(),
+    iteration = integer(),
+    stringsAsFactors = FALSE
+  )
+  steps <- c(
+    "load_config", "load_functions", "load_libraries", "paths", "load_meta",
+    "open_fbm_file", "simpleDecomp", "get_pathways", "assemble_path_matrix",
+    "get_chat", "infer_k", "run_plier2"
+  )
+  pb <- txtProgressBar(min = 0, max = length(steps), style = 3)
+  step_idx <- 0
+  update_pb <- function() {
+    step_idx <<- step_idx + 1
+    setTxtProgressBar(pb, step_idx)
+  }
+
+  # Step 1: load_config
+  start_time <- Sys.time()
+  library(here)
+  source(here("config.R"))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "load_config", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 2: load_functions
+  start_time <- Sys.time()
+  source(here("R/solvers.R"))
+  source(here("R/utilsNew.R"))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "load_functions", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 3: load_libraries
+  start_time <- Sys.time()
+  # Add any additional libraries here if needed
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "load_libraries", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 4: paths
+  start_time <- Sys.time()
+  output_dir <- config$ARCHS4$DATASET_FOLDER
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "paths", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 5: load_meta
+  start_time <- Sys.time()
+  meta <- readRDS(file.path(output_dir, "metadata_filtered.rds"))
+  gene_symbols_thin <- meta$gene_symbols_thin
+  gene_lengths <- meta$gene_lengths
+  n_genes_thin <- meta$n_genes_thin
+  n_samples <- meta$n_samples
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "load_meta", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 6: open_fbm_file
+  start_time <- Sys.time()
+  fbm_file  <- file.path(output_dir, "fbm")
+  output_file <- paste0(fbm_file, "_filtered")
+  fbm_obj_filtered <- FBM(
+    nrow        = n_genes_thin,
+    ncol        = n_samples,
+    backingfile = output_file ,
+    create_bk   = FALSE,
+  )
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "open_fbm_file", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 7: simpleDecomp
+  start_time <- Sys.time()
+  decomp_file <- file.path(output_dir, "simpleDecompResult.rds")
+  fbm_obj.sdres <- readRDS(decomp_file)
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "simpleDecomp", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 8: get_pathways
+  start_time <- Sys.time()
+  output_pathways_dir <- file.path(config$GENERAL$DATA_DIR, "pathways")
+  gmtList=list()
+  gmtList[["Wiki"]]=getGMT(output_pathways_dir, "Wiki")
+  gmtList[["MGI"]]=getGMT(output_pathways_dir, "MGI")
+  gmtList[["GO"]]=getGMT(output_pathways_dir, "GO")
+  gmtList[["Reactome"]]=getGMT(output_pathways_dir, "Reactome")
+  gmtList[["CellMarkers"]]=getGMT(output_pathways_dir, "CellMarkers")
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "get_pathways", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 9: assemble_path_matrix
+  start_time <- Sys.time()
+  pathMat = gmtListToSparseMat(gmtList[c(length(gmtList))])
+  save(pathMat, file = file.path(output_dir, "pathMat.rds"))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "assemble_path_matrix", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 10: get_chat
+  start_time <- Sys.time()
+  matchedPaths=getMatchedPathwayMat(pathMat, gene_symbols_thin)
+  save(matchedPaths, file = file.path(output_dir, "matchedPaths.rds"))
+  Chat=getChat(matchedPaths, method = "fast")
+  save(Chat, file = file.path(output_dir, "chat.rds"))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "get_chat", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 11: infer_k
+  start_time <- Sys.time()
+  PLIER_K <- readRDS(file.path(output_dir, "plier_k.rds"))$PLIER_K
+  message(paste0("K inferred for PLIER: ", PLIER_K))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "infer_k", seconds = elapsed, iteration = iter))
+  update_pb()
+
+  # Step 12: run_plier2
+  start_time <- Sys.time()
+  N_CORES <- config$ARCHS4$PLIER_PARAMS$N_CORES
+  if (N_CORES > 1) {
+    options(bigstatsr.check.parallel.blas = FALSE)
+    blas_nproc <- getOption("default.nproc.blas")
+    options(default.nproc.blas = NULL)
+  }
+  fbm_obj.plier2 <- PLIERv2(
+    fbm_obj_filtered,
+    matchedPaths,
+    sdres = fbm_obj.sdres,
+    Chat = Chat,
+    doCrossval = T,
+    multiplier = config$ARCHS4$PLIER_PARAMS$MULTIPLIER,
+    max.U.updates = config$ARCHS4$PLIER_PARAMS$MAX_U_UPDATES,
+    max.iter = config$ARCHS4$PLIER_PARAMS$MAX_ITER,
+    k = PLIER_K,
+    ncores=N_CORES
+  )
+  if (N_CORES > 1) {
+    options(bigstatsr.check.parallel.blas = TRUE)
+    options(default.nproc.blas = blas_nproc)
+  }
+  saveRDS(fbm_obj.plier2, file = file.path(output_dir, paste0(config$ARCHS4$DATASET_NAME, "_PLIER2_iter", iter, ".rds")))
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  timing <- rbind(timing, data.frame(step = "run_plier2", seconds = elapsed, iteration = iter))
+  update_pb()
+  close(pb)
+
+  # Save timing for this iteration
+ 
+  model_perf_dir <- file.path(output_dir, "model_performance")
+  archs4_dir <- file.path(output_dir, "archs4")
+  dir.create(model_perf_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(archs4_dir, showWarnings = FALSE, recursive = TRUE)
+  timing_file_model_perf <- file.path(model_perf_dir, paste0(save_result_file_name, "_timing_iter", iter, ".csv"))
+  timing_file_archs4 <- file.path(archs4_dir, paste0(save_result_file_name, "_timing_iter", iter, ".csv"))
+  write.csv(timing, file = timing_file_model_perf, row.names = FALSE)
+  write.csv(timing, file = timing_file_archs4, row.names = FALSE)
+  cat("Timing saved to:\n", timing_file_model_perf, "\n", timing_file_archs4, "\n")
+  print(timing)
+}
+```
+
+```{r session_info}
+sessionInfo() # Print session information
+```
