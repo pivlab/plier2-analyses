@@ -35,17 +35,21 @@ config$GTEx=list(
   DATASET_FOLDER=here(
     file.path(config$GENERAL$OUTPUT_DIR, "gtex")
   ),
-  DATASET_ENSEMBL_VERSION=107,
   URL="https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct.gz",
   DATASET_FILE=here(file.path("data", "gtex", "bulk-gex_v8_rna-seq_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.rds")),
-  GENES_MEAN_CUTOFF=1,
+  GENES_MEAN_CUTOFF=0.5,
   GENES_VAR_CUTOFF=0.1,
-  PLIER_PARAMS=list(
-    RANDOM_SVD_N_CORES=30,
-    RANDOM_SVD_SEED=123,
-    MULTIPLIER=3,
-    MAX_U_UPDATES=3,
-    MAX_ITER=350,
-    N_CORES=1
-  )
+  RANDOM_SVD_SEED=123,
+  MAX_U_UPDATES=50
+)
+
+config$recount2 <- list(
+  DATASET_NAME = "recount2",
+  DATASET_FOLDER = here(file.path(config$GENERAL$OUTPUT_DIR, "recount2")),
+  URL = "https://ndownloader.figshare.com/files/10881866",
+  DATASET_FILE = here(file.path("data", "recount2", "recount_data_prep_PLIER.RDS")),
+  GENES_MEAN_CUTOFF=0.5,
+  GENES_VAR_CUTOFF=0.1,
+  RANDOM_SVD_SEED=123,
+  MAX_U_UPDATES=50
 )
