@@ -41,9 +41,7 @@ config$GTEx=list(
   GENES_VAR_CUTOFF=0.1,
   RANDOM_SVD_SEED=123,
   MAX_U_UPDATES=50,
-  N_CORES=1,
-  RANDOM_SVD_N_CORES=30
-)
+  N_CORES=5)
 
 config$recount2 <- list(
   DATASET_NAME = "recount2",
