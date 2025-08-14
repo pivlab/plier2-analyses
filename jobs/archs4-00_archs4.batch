@@ -1,16 +1,17 @@
 #!/bin/bash
-
 #SBATCH --job-name=plierv2
-#SBATCH --output=plierv2.%j.log
-#SBATCH --error=plierv2.%j.err
-#SBATCH --time=86:00:00
+#SBATCH --output=logPLIER2.%j.log
+#SBATCH --error=logPLIER2.%j.err
+#SBATCH --time=300:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=30
 #SBATCH --mem=200GB
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=marc.subiranagranes@cuanschutz.edu
 
-source activate /pividori_lab/marc_projects/conda_env/plier2
+MINIFORGE="/pividori_lab/software/miniforge3"
+source "${MINIFORGE}/etc/profile.d/conda.sh"
+source /pividori_lab/marc_projects/conda_env/plier2/bin/activate
 
 n_jobs=30
 export NUMBA_NUM_THREADS=$n_jobs
@@ -19,24 +20,8 @@ export OPENBLAS_NUM_THREADS=$n_jobs
 export NUMEXPR_NUM_THREADS=$n_jobs
 export OMP_NUM_THREADS=$n_jobs
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(readlink -f "${SCRIPT_DIR}/..")"
-cd "$REPO_ROOT"
-
-NB="${REPO_ROOT}/nbs/01_model_building/archs4/00_archs4.ipynb"
-if [[ ! -f "$NB" ]]; then
-  echo "ERROR: Notebook not found: $NB" >&2
-  exit 1
-fi
-
-echo "Host: $(hostname)"
-echo "Start: $(date)"
-echo "Repo root: $REPO_ROOT"
-echo "Notebook: $NB"
 start=$(date +%s)
-
-jupyter nbconvert --to notebook --execute "$NB" --inplace --ExecutePreprocessor.timeout=-1
-
+jupyter nbconvert --to notebook --execute nbs/01_model_building/archs4/00_archs4.ipynb --output 00_archs4_executed.ipynb
 end=$(date +%s)
 echo "Elapsed seconds: $((end - start))"
 echo "End: $(date)"
