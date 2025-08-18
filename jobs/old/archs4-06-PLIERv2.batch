@@ -3,7 +3,7 @@
 #SBATCH --job-name=plierv2
 #SBATCH --output=plierv2.%j.log
 #SBATCH --error=plierv2.%j.err
-#SBATCH --time=86:00:00
+#SBATCH --time=300:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=30
 #SBATCH --mem=200GB
