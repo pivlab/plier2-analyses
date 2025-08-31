@@ -5,7 +5,7 @@
 #SBATCH --time=300:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=30
-#SBATCH --mem=200GB
+#SBATCH --mem=500GB
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=marc.subiranagranes@cuanschutz.edu
 
@@ -21,7 +21,7 @@ export NUMEXPR_NUM_THREADS=$n_jobs
 export OMP_NUM_THREADS=$n_jobs
 
 start=$(date +%s)
-jupyter nbconvert --to notebook --execute nbs/01_model_building/archs4/03_archs4 PLIERfull.ipynb --output 03_archs4 PLIERfull_executed.ipynb
+jupyter nbconvert --to notebook --execute nbs/01_model_building/archs4/03_archs4_PLIERfull.ipynb --output 03_archs4_PLIERfull_executed.ipynb
 end=$(date +%s)
 echo "Elapsed seconds: $((end - start))"
 echo "End: $(date)"
