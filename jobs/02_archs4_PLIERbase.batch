@@ -21,7 +21,7 @@ export NUMEXPR_NUM_THREADS=$n_jobs
 export OMP_NUM_THREADS=$n_jobs
 
 start=$(date +%s)
-jupyter nbconvert --to notebook --execute nbs/01_model_building/archs4/02_archs4 PLIERbase.ipynb --output 02_archs4 PLIERbase_executed.ipynb
+jupyter nbconvert --to notebook --execute nbs/01_model_building/archs4/02_archs4_PLIERbase.ipynb --output 02_archs4_PLIERbase_executed.ipynb
 end=$(date +%s)
 echo "Elapsed seconds: $((end - start))"
 echo "End: $(date)"
