@@ -22,10 +22,8 @@ dependencies:
   - r-tidyr
   - r-devtools
   - r-irkernel
-  - r-knitr
   - r-pkgdown
   - r-remotes
-
 
   # Jupyter support
   - jupyterlab
@@ -40,6 +38,9 @@ dependencies:
   - bioconductor-fgsea
   - bioconda::r-archr
   - bioconductor-org.Hs.eg.db
+  - bioconductor-clusterprofiler
+  - bioconductor-go.db
+  - bioconductor-annotationdbi
 
   # Other R utilities
   - r-plyr
@@ -49,7 +50,16 @@ dependencies:
   - r-kernsmooth
   - r-gplots
   - r-diagrammer
+  - r-nmf
 
   # Ensure compatible SSL and curl for hdf5r in RStudio Server
   - openssl
   - libcurl
+
+  # Python + data science
+  - python=3.11
+  - pandas
+  - pyprojroot
+  - numpy
+  - matplotlib
+  - scikit-learn
